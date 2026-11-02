@@ -710,6 +710,26 @@ error killed one revise job at install; relaunching unchanged worked.
   STEP, as SFT/RFT targets: ~1 cent per part via batch); and a Claude + ours ensemble picked by render agreement is
   a cheap upper-bound test.
 
+### Claude teacher data on real parts (`vlm_teacher_sft`; Nov 2) — SFT on it failed
+- Data: `claude_baseline.py submit --rich data/rich/real_train --sample --n ... --exclude_batch ...` (3 batches, all
+  14,165 real train parts, view4, $140.50; own IoU 65.5 / 65.4 / 66.0) + `retry --src ... --below 0.8` (guided second
+  attempt with the render of its own program or the build error; 8,299 parts, $143.90; on batch 1's weak parts 47.4 ->
+  54.8, better on 66 %). `scripts/build_teacher.py` -> `data/claude_teacher/{teacher,revision}.parquet` (bucket
+  `data/claude_teacher.tar`): 7,244 targets with own >= 0.8 (mean 0.905; 5,866 first, 1,378 retry; plain 2,489, fillet
+  1,812, revolve 1,810, chamfer 1,133) and 1,242 revision examples. Claude-vs-ours per-part pick on the real test by
+  render agreement: 72.8 (ours one answer 65.1, Claude 66.5; `results/ens_real`).
+- SFT `RUN=vlm_teacher_sft` (job 6ae7f75ec78863f9c62ffec7) from `vlm_grpo_real2`: `--teacher ... --teacher_p 0.3
+  --rich_p 0.1 --revision data/revision data/rich_revision data/claude_teacher --revision_p 0.1 --lr 1e-5 --steps 3000`
+  (~4 s/step, ~$22). Loss started at 4.35 (Claude's multi-line style vs our one-line chained programs), 0.42 by 500.
+  DeepCAD val gt IoU view4 / view1 / view1+expert: s1500 72.0 / 62.5 / 90.4, s3000 74.7 / 66.8 / 90.6 (start ~92.4 /
+  ~88 / ~90.9; own IoU 84.0 at view4: frame/scale drift towards Claude's conventions plus worse shapes). **Real test
+  own IoU view4 65.1 -> 33.5 (s1500) -> 37.1 (s3000), invalid ~29-32 %** (`results/real_teacher_s{1500,3000}`). Broken
+  outputs: repetition loops (~20 %), Claude-style fillets/chamfers that fail (BRep command not done, no suitable
+  edges), syntax errors. Off-policy imitation of a different coding style breaks the model; **not used, no RL top-up**.
+- What to do with the teacher data instead (not tried): rewrite Claude's programs into our one-line style and check
+  each still builds the same shape; or keep our own style via rejection sampling on real train parts and use Claude
+  only as a reference; or a low share (~5 %) followed by RL.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
