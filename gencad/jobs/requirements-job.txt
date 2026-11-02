@@ -22,3 +22,4 @@ pytest
 gdown
 pebble                   # scripts/geom_eval.py: per-task timeouts for OCC booleans
 scipy
+rtree

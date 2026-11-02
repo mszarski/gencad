@@ -70,6 +70,8 @@ def main():
     ap.add_argument("--max_new_tokens", type=int, default=1024)
     ap.add_argument("--max_len", type=int, default=4096)
     ap.add_argument("--invalid_reward", type=float, default=-0.5)
+    ap.add_argument("--detail_w", type=float, default=0.0,
+                    help="rich/real parts: reward = (1 - w) * own IoU + w * detail score (mm/detail.py)")
     ap.add_argument("--micro", type=int, default=16)
     ap.add_argument("--lr", type=float, default=2e-6)
     ap.add_argument("--warmup", type=int, default=20)
@@ -237,6 +239,7 @@ def main():
             rs = [r for r in scores(codes, vk) if r is not None]
             key = "rich_view4" if name == "train" else f"{name}_view4"
             rec[key] = {"iou_own": round(100 * float(np.mean([r["own"] for r in rs])), 2),
+                        "detail": round(100 * float(np.mean([r.get("detail", 0.0) for r in rs])), 2),
                         "invalid": round(float(np.mean([not r["valid"] for r in rs])), 4)}
         rec["eval_sec"] = round(time.time() - t0)
         emit(rec)
@@ -270,7 +273,8 @@ def main():
         rs = scores(codes, [u for u in uids for _ in range(a.group)])
         t_score = time.time() - t0 - t_gen
         rew_uids = [u for u in uids for _ in range(a.group)]
-        R = np.array([np.nan if r is None else ((r["own"] if u.startswith("rich:") else r["gt"]) if r["valid"]
+        R = np.array([np.nan if r is None else (((1 - a.detail_w) * r["own"] + a.detail_w * r.get("detail", 0.0)
+                                                  if u.startswith("rich:") else r["gt"]) if r["valid"]
                       else a.invalid_reward) for r, u in zip(rs, rew_uids)])   # rich: size unobservable -> own IoU
         R = R.reshape(a.prompts, a.group)
         std = np.nanstd(R, axis=1, keepdims=True)
