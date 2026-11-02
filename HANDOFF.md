@@ -1,5 +1,9 @@
 # Handoff: image/text → CAD program (the `gencad/` project)
 
+> **Note:** this handoff was written in the old `mszarski/claude_playground` monorepo, before the project moved here.
+> References to that repo, its `claude/...` branches, `trajectory_classifier`, the `bd` tracker, or "don't edit
+> CLAUDE.md" are out of date. Where this file and CLAUDE.md disagree, CLAUDE.md wins.
+
 Written 2026-11-02 at the end of a long Claude Code session, for a fresh session that has none of that
 conversation. The project lives in `gencad/` of `mszarski/claude_playground` (branch `claude/gencad-multimodal`)
 and is moving to its own repository; paths below are relative to `gencad/` unless they start with `/` or `hf://`.

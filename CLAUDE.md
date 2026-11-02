@@ -36,7 +36,7 @@ Gotchas; grep for the section you need), `REPORT.md` (narrative summary), `MULTI
   primary source, separate claims from evidence, tie it to our bottleneck (data and feedback, not model size).
 - **Status pings**: reply with where each job is, latest numbers, ETA, spend. If a watcher died or a job failed, say
   so and what you did about it.
-- Process: commit work as you go; commit messages end with the harness's attribution lines; never put model
+- Process: commit and push work as you go; commit messages end with the harness's attribution lines; never put model
   identifiers in commits/PRs beyond those lines; **don't create PRs unless asked**.
 
 ## Setup and tests (run everything from `gencad/`)
