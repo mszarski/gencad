@@ -136,6 +136,8 @@ case "$STAGE" in
     if [[ "${RICH:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/train_*.tar; do tar -xf "$t" -C data/rich; done; fi
     if [[ "${REV:-0}" == "1" ]]; then tar -xf /work/data/revision.tar -C data; fi
     if [[ "${REV_RICH:-0}" == "1" ]]; then tar -xf /work/data/rich_revision.tar -C data; fi
+    if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
+    if [[ "${TEACHER:-0}" == "1" ]]; then tar -xf /work/data/claude_teacher.tar -C data; fi   # scripts/build_teacher.py
     pip install -q -U "brotli>=1.2"   # the image's brotli breaks Hub downloads of base models (httpx2 decoder kwargs)
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True   # long multi-image batches fragment memory (4B OOM)
     python train_vlm_cq.py --data data --name "$RUN" --steps ${STEPS:-30000} "$@" ;;

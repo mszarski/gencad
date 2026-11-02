@@ -163,6 +163,9 @@ def main():
     ap.add_argument("--rich", default=None, help="rich-feature shards dir (scripts/gen_rich_data.py: <dir>/<shard>/)")
     ap.add_argument("--rich_p", type=float, default=0.4, help="share of samples drawn from --rich")
     ap.add_argument("--rich_max_chars", type=int, default=3000)
+    ap.add_argument("--teacher", default=None, help="teacher targets on real parts (scripts/build_teacher.py "
+                    "teacher.parquet: stem, code); images only, like --rich")
+    ap.add_argument("--teacher_p", type=float, default=0.2, help="share of samples drawn from --teacher")
     ap.add_argument("--rft", default=None, help="rejection-sampling targets (scripts/build_rft.py parquet)")
     ap.add_argument("--rft_p", type=float, default=0.5, help="share of samples drawn from --rft (rest as before)")
     ap.add_argument("--levels", nargs="*", default=["abstract", "beginner", "intermediate", "expert", "description"])
@@ -249,6 +252,12 @@ def main():
                 items_rich += [(os.path.join(a.rich, sh, "renders", u), c, None) for u, c in zip(df.uid, df.code)]
         items_rich = items_rich[: a.max_items] if a.max_items else items_rich
         print(f"[data] rich parts {len(items_rich)} from {a.rich}, share {a.rich_p}", flush=True)
+    items_teacher = []
+    if a.teacher:
+        tp = pd.read_parquet(a.teacher)
+        tp = tp[tp.code.str.len() <= a.rich_max_chars]
+        items_teacher = [(st, c, None) for st, c in zip(tp.stem, tp.code)]
+        print(f"[data] teacher targets {len(items_teacher)} from {a.teacher}, share {a.teacher_p}", flush=True)
     items_rev, w_rev = [], []
     if a.revision:
         rv = pd.concat([pd.read_parquet(os.path.join(d, "revision.parquet")).assign(root=d) for d in a.revision],
@@ -277,13 +286,15 @@ def main():
               flush=True)
     p_rft = a.rft_p if items_rft else 0.0
     p_rich = a.rich_p if items_rich else 0.0
+    p_teacher = a.teacher_p if items_teacher else 0.0
     p_rev = a.revision_p if items_rev else 0.0
-    rest = 1 - p_rft - p_rich - p_rev
-    items = items_dc + items_rc + items_rft + items_rich + items_rev
+    rest = 1 - p_rft - p_rich - p_teacher - p_rev
+    items = items_dc + items_rc + items_rft + items_rich + items_teacher + items_rev
     w = np.concatenate([np.full(len(items_dc), rest * a.deepcad_p / max(len(items_dc), 1)),
                         np.full(len(items_rc), rest * (1 - a.deepcad_p) / max(len(items_rc), 1)),
                         np.full(len(items_rft), p_rft / max(len(items_rft), 1)),
                         np.full(len(items_rich), p_rich / max(len(items_rich), 1)),
+                        np.full(len(items_teacher), p_teacher / max(len(items_teacher), 1)),
                         p_rev * np.asarray(w_rev, float)])
     if items_rft:
         print(f"[data] rft targets {len(items_rft)} from {a.rft}, share {p_rft}", flush=True)
