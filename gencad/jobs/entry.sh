@@ -281,6 +281,11 @@ case "$STAGE" in
     if [[ "${RICH_TEST:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/test*.tar; do tar -xf "$t" -C data/rich; done; fi
     python scripts/rich_iou.py --preds "results/$RUN/preds.pkl" --out "results/$RUN/rich_iou.json" --rows "results/$RUN/rich_rows.pkl" "$@" ;;
 
+  selfsample) # our model's greedy + sampled programs on rich/real train parts (scripts/sample_real.py); INIT = model dir
+    need_vllm   # REAL=1 unpacks the real training parts; writes results/$RUN_<shard>/preds.pkl (score each with richiou)
+    if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
+    python scripts/sample_real.py --model "${INIT:?set INIT=<model dir>}" --out "results/$RUN" "$@" ;;
+
   orient)     # orientation search on saved predictions (scripts/orient_fix.py) + scoring -> results/$RUN/orient*.{pkl,json}
     need_cq     # RICH_TEST=1: rich/real test parts (scored by rich_iou.py); else DeepCAD test (cq_iou.py)
     if [[ "${RICH_TEST:-0}" == "1" ]]; then

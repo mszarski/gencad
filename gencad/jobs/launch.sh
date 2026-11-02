@@ -16,7 +16,7 @@
 # Overrides: FLAVOR, TIMEOUT, BUCKET (default <you>/gencad-work), IMAGE, plus any env knob from entry.sh
 # (RUN, EPOCHS, BS, LR, STEPS, CSR_CKPT, CCIP_CKPT, DP_CKPT, IMG_TYPE, OCC, HUB_REPO). DRY=1 prints the command.
 set -euo pipefail
-STAGE=${1:?usage: jobs/launch.sh <fetch|text|test|csr|ccip|export|embed|dp|mm|eval|ar|e2e|textcad|tokencad|vlmcad|vlmcq|vlmrl|vlmpred|vllmpred|revise|rftsample|vlmdpo|vlmgrpo|richgen|revdata|richrev|orient|realgen|mistral|richiou|upstream|baselines|geom|checkviews|render|fetchrecode|renderrecode|convertdc|cqiou|visual|shell> [args...]}; shift
+STAGE=${1:?usage: jobs/launch.sh <fetch|text|test|csr|ccip|export|embed|dp|mm|eval|ar|e2e|textcad|tokencad|vlmcad|vlmcq|vlmrl|vlmpred|vllmpred|revise|rftsample|vlmdpo|vlmgrpo|richgen|revdata|richrev|orient|realgen|mistral|richiou|selfsample|upstream|baselines|geom|checkviews|render|fetchrecode|renderrecode|convertdc|cqiou|visual|shell> [args...]}; shift
 : "${HF_TOKEN:?export HF_TOKEN first}"
 NS=${NS:-$(hf auth whoami --format json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("name") or d["user"])')}
 BUCKET=${BUCKET:-$NS/gencad-work}
@@ -34,6 +34,7 @@ case "$STAGE" in
   vlmcad|vlmcq|vlmrl|rftsample|vlmdpo|vlmgrpo|richrev) DF=h200;        DT=24h ;;
   vlmpred)      DF=a100-large;  DT=3h ;;
   vllmpred)     DF=a100-large;  DT=1h ;;
+  selfsample)   DF=a100-large;  DT=4h ;;
   mistral)      DF=h200x8;      DT=3h ;;
   richiou)      DF=cpu-xl;      DT=4h ;;
   revise)       DF=a100-large;  DT=3h ;;
