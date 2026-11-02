@@ -730,6 +730,14 @@ error killed one revise job at install; relaunching unchanged worked.
   each still builds the same shape; or keep our own style via rejection sampling on real train parts and use Claude
   only as a reference; or a low share (~5 %) followed by RL.
 
+### DeepSeek V4.1 Flash zero-shot on real parts (`results/deepseek_real`; Nov 2)
+- Served by HF inference providers (router, billed to the HF account; no GPU of ours): `scripts/router_baseline.py
+  --model deepseek-ai/DeepSeek-V4.1-Flash --rich data/rich/real --modes view4` (same image + full-feature prompt as
+  Claude; 8 parallel requests, resumable). ~21k output tokens per answer (mostly reasoning; 32k cap), 437 prompt
+  tokens per request (the provider seems to shrink the image a lot). view1 not run.
+- view4, 600 parts, own IoU: **19.2** (invalid 30.5 %; chamfer 18.8, fillet 19.0, plain 20.4, revolve 18.8) vs Claude
+  66.5 (-47.2 +- 1.3 paired) and our one answer 65.1. Not a useful benchmark or teacher for this task.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
