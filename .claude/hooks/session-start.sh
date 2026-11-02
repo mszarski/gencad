@@ -9,26 +9,11 @@ fi
 
 echo "Setting up development environment..."
 
-# Install Python dependencies
-echo "Installing Python dependencies..."
-pip install -r "$CLAUDE_PROJECT_DIR/trajectory_classifier/requirements.txt"
+# CPU torch is enough for the smoke tests; GPU work runs as HF Jobs
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -r "$CLAUDE_PROJECT_DIR/gencad/jobs/requirements-job.txt"
 
-# Install pytest for testing
-pip install pytest
-
-# Install bd (beads issue tracker)
-echo "Setting up bd (beads issue tracker)..."
-if ! command -v bd &> /dev/null; then
-    if npm install -g @beads/bd --quiet 2>/dev/null && command -v bd &> /dev/null; then
-        echo "bd installed via npm"
-    elif command -v go &> /dev/null; then
-        echo "npm install failed, trying go install..."
-        go install github.com/steveyegge/beads/cmd/bd@latest
-        echo "export PATH=\"\$PATH:\$HOME/go/bin\"" >> "$CLAUDE_ENV_FILE"
-        echo "bd installed via go"
-    else
-        echo "Warning: Could not install bd - neither npm nor go available"
-    fi
-fi
+# Clone upstream GenCAD at the pinned commit, apply patches/, symlink it in
+"$CLAUDE_PROJECT_DIR/gencad/setup.sh" || echo "Warning: gencad setup failed"
 
 echo "Session startup complete"

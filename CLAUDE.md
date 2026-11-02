@@ -15,8 +15,6 @@ Read these before non-trivial work (all in `gencad/`):
 - `REPORT.md`: narrative project report. `MULTIMODAL.md`: original design and plan.
 - `datagen/README.md`: rules for procedural part families (emitted code must be literal CadQuery).
 
-`trajectory_classifier/` at the repo root is unrelated leftover from the monorepo this was split from; ignore it.
-
 ## Setup and tests (run everything from `gencad/`)
 
 ```bash
