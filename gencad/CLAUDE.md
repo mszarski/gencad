@@ -738,6 +738,34 @@ error killed one revise job at install; relaunching unchanged worked.
 - view4, 600 parts, own IoU: **19.2** (invalid 30.5 %; chamfer 18.8, fillet 19.0, plain 20.4, revolve 18.8) vs Claude
   66.5 (-47.2 +- 1.3 paired) and our one answer 65.1. Not a useful benchmark or teacher for this task.
 
+### Robustness check (`scripts/render_variants.py`, `results/rob_*`; Nov 2)
+The 600 real test parts re-rendered six ways (bucket `data/rich/test_robust.tar` -> `data/rich/robust/<variant>`):
+cameras rotated up to 15 / 30 deg, other light side + darker shading + grey background, steel-blue tint, no edge lines,
+160 px blur. `vlm_grpo_real2`, one answer, own IoU, paired vs our normal renders (view4 65.1 / view1 59.5):
+| variant | view4 | view1 |
+|---|---|---|
+| color | 61.6 (-3.5) | 46.7 (-12.8) |
+| noedge | 59.1 (-6.0) | 53.3 (-6.2) |
+| lowres | 57.7 (-7.5) | 48.4 (-11.1) |
+| light | 52.3 (-12.8) | **18.8 (-40.7)** |
+| cam15 | **36.2 (-28.9)** | 44.7 (-14.8) |
+| cam30 | **31.3 (-33.9)** | 29.7 (-29.8) |
+(s.e. ~1; invalid rates unchanged at 3-7 %.) The model is tied to our exact cameras and render style: "level with
+Opus" holds only on our renders. Fix in progress: `rand_*` variants (per part a random mix of camera jitter <= 30 deg,
+light, background, tint, edges, blur) of all real train parts (job `variants`, `/work/data/rich/real_rand_{0..3}.tar`,
+`RAND=1` unpacks to `data/rich/real_rand/rand_{a,b}/<shard>`) as extra RL / SFT inputs.
+
+### Detail score (`mm/detail.py`; in `rich_iou.py` and `train_vlm_grpo.py --detail_w`; Nov 2)
+Volume IoU barely sees fine features (missing 4 fillets: own IoU 0.989; missing chamfer 0.978; missing 2 small holes
+0.979). `detail = 0.5 surf + 0.25 topo + 0.25 faces`, after fitting both solids to their own unit box: surf = surface
+F-score at tau 0.5 % / 1 % (exact point-to-mesh distance via trimesh, needs `rtree`), topo = 1 / (1 + |genus diff|)
+(Euler-Poincare on the B-rep), faces = face-type histogram overlap (plane / cylinder / cone / sphere / torus / other).
+Unit checks: identical 1.00; missing fillets 0.88, chamfer 0.85, 2 small holes 0.75; holes moved 0.97. ~0.4 s/call.
+Real test, view4, paired ours (`vlm_grpo_real2` one answer) vs Claude: own IoU 65.1 vs 66.5; detail 67.5 vs 69.7
+(-2.2 +- 0.9); surf **63.6 vs 59.6 (+4.0)**, topo **81.6 vs 90.4 (-8.8)**, faces **61.0 vs 69.2 (-8.2)**. Ours fits
+surfaces better but drops holes and fillet/chamfer faces more often. Of our answers with own IoU >= 0.9, 17 % have
+detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6 own + 0.4 detail.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
