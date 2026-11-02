@@ -140,6 +140,7 @@ case "$STAGE" in
     if [[ "${TEACHER:-0}" == "1" ]]; then tar -xf /work/data/claude_teacher.tar -C data; fi   # scripts/build_teacher.py
     pip install -q -U "brotli>=1.2"   # the image's brotli breaks Hub downloads of base models (httpx2 decoder kwargs)
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True   # long multi-image batches fragment memory (4B OOM)
+    if [[ "${RAND:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_rand_*.tar; do tar -xf "$t" -C data/rich; done; fi
     python train_vlm_cq.py --data data --name "$RUN" --steps ${STEPS:-30000} "$@" ;;
 
   vlmrl)      # RL on IoU for the CadQuery writer (train_vlm_rl.py), DeepCAD parts only; INIT = SFT model dir
@@ -169,6 +170,7 @@ case "$STAGE" in
     need_vllm
     if [[ "${RICH:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/train_*.tar; do tar -xf "$t" -C data/rich; done; fi
     if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
+    if [[ "${RAND:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_rand_*.tar; do tar -xf "$t" -C data/rich; done; fi
     python train_vlm_grpo.py --data data --name "$RUN" --init "${INIT:-results/vlm_rft_v1/model}" ${STEPS:+--steps $STEPS} "$@" ;;
 
   revise)     # build-inspect-fix inference (scripts/revise_vllm.py) -> results/$RUN/revise.pkl; INIT = model dir
@@ -285,6 +287,12 @@ case "$STAGE" in
     need_vllm   # REAL=1 unpacks the real training parts; writes results/$RUN_<shard>/preds.pkl (score each with richiou)
     if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
     python scripts/sample_real.py --model "${INIT:?set INIT=<model dir>}" --out "results/$RUN" "$@" ;;
+
+  variants)   # randomised re-renders of rich/real parts (scripts/render_variants.py) -> /work/data/rich/real_rand_<shard>.tar
+    need_cq     # REAL=1 unpacks the real training parts; SHARD = which shard dir to render
+    if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
+    python scripts/render_variants.py --src data/rich/real_train --out data/rich/real_rand --shards "${SHARD:-0}" "$@"
+    (cd data/rich && tar -cf "/work/data/rich/real_rand_${SHARD:-0}.tar" real_rand/*/"${SHARD:-0}") && ls -la "/work/data/rich/real_rand_${SHARD:-0}.tar" ;;
 
   orient)     # orientation search on saved predictions (scripts/orient_fix.py) + scoring -> results/$RUN/orient*.{pkl,json}
     need_cq     # RICH_TEST=1: rich/real test parts (scored by rich_iou.py); else DeepCAD test (cq_iou.py)

@@ -8,6 +8,9 @@ Variants (each a copy of the part list with its own renders, same GT programs):
   color          tinted (steel-blue) shading on an off-white background, edges a darker tint
   noedge         no B-rep edge lines (shading only)
   lowres         rendered at 448 px, then down to 160 px and back up (blurry)
+  rand_<x>       training augmentation: per part a random mix of the above (camera jitter up to 30 deg with p 0.7,
+                 random light side and shading range, grey or off-white background, random tint with p 0.4, no edges
+                 with p 0.3, blur with p 0.3); different <x> give independent draws
 
   python scripts/render_variants.py --src data/rich/real --out data/rich/robust --variants cam15 cam30 light color noedge lowres
 Writes <out>/<variant>/<shard>/{parts.parquet, renders/<uid>_{0..3}.png}; score with predict_vllm.py --rich and
@@ -94,8 +97,23 @@ def work(args):
                 kw = {"tint": (110, 150, 205), "bg": (248, 246, 240)}
             elif var == "noedge":
                 kw = {"edges": False}
+            blur = var == "lowres"
+            if var.startswith("rand"):
+                r = np.random.default_rng(zlib.crc32((step + var).encode()))   # one draw per part and variant
+                if k == 0:
+                    look = {"jit": r.uniform(0, 30) if r.random() < 0.7 else 0.0,
+                            "light": (r.uniform(-1, 1), r.uniform(-1, 1)),
+                            "shade": (r.uniform(0.2, 0.5), r.uniform(0.4, 0.7)),
+                            "bg": int(r.uniform(215, 256)),
+                            "tint": tuple(int(x) for x in r.uniform(90, 235, 3)) if r.random() < 0.4 else None,
+                            "edges": r.random() >= 0.3, "blur": r.random() < 0.3}
+                if look["jit"] > 0:
+                    d = rotate_dir(d0, look["jit"], rng)
+                kw = {"light": look["light"], "shade": look["shade"], "bg": look["bg"], "edges": look["edges"],
+                      "tint": look["tint"]}
+                blur = look["blur"]
             im = render(tris, fid, d, size=size, **kw)
-            if var == "lowres":
+            if blur:
                 im = im.resize((160, 160), Image.BILINEAR).resize((size, size), Image.BILINEAR)
             im.save(f"{stem}_{k}.png", optimize=True)
     return "ok"
@@ -108,12 +126,15 @@ def main():
     ap.add_argument("--variants", nargs="*", default=VARIANTS)
     ap.add_argument("--size", type=int, default=448)
     ap.add_argument("--workers", type=int, default=usable_cpus())
+    ap.add_argument("--shards", nargs="*", default=None, help="only these shard dirs of --src")
     a = ap.parse_args()
     import re
     import pandas as pd
     from pebble import ProcessPool
     jobs = []
     for sh in sorted(os.listdir(a.src)):
+        if a.shards and sh not in a.shards:
+            continue
         pq = os.path.join(a.src, sh, "parts.parquet")
         if not os.path.exists(pq):
             continue
