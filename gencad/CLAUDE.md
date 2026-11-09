@@ -766,6 +766,30 @@ Real test, view4, paired ours (`vlm_grpo_real2` one answer) vs Claude: own IoU 6
 surfaces better but drops holes and fillet/chamfer faces more often. Of our answers with own IoU >= 0.9, 17 % have
 detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6 own + 0.4 detail.
 
+### Self-improvement + robustness (`vlm_self_sft` -> `vlm_grpo_self`; Nov 3-9) — NEW BEST
+- Sampling (`scripts/sample_real.py`, job `selfsample`, A100, ~16 min/shard): `vlm_grpo_real2` greedy + 8 samples (T 0.8)
+  on all 14,165 real train parts, view4; scored by 4 `richiou` jobs (cpu-xl, ~5 h each with detail). Score = 0.6 own +
+  0.4 detail: greedy 66.5, best-of-9 74.0; best beats greedy by > 0.02 on 45 %, > 0.10 on 20 %.
+- Targets (`scripts/build_self_targets.py --aug data/rich/real_rand/rand_{a,b}`, bucket `data/self_real.tar`, `SELF=1`):
+  7,110 parts with score >= 0.8 (mean 0.926; 67 % from samples) + 14,220 copies paired with the randomised renders.
+- SFT `vlm_self_sft` (job 6ae942750e0338d1bb7ec7b3, from vlm_grpo_real2, `--teacher data/self_real/targets.parquet
+  --teacher_p 0.3 --rich_p 0.1 --revision_p 0.05 --lr 1e-5 --steps 2000`, ~3.7 s/step, ~$12): loss ~0.2 throughout
+  (own style, no clash); DeepCAD val view4 92.2 / view1 86.0. Real test view4 65.1 -> 63.1 (-2.0), but robustness
+  jumps: cam15 36.2 -> 52.4, cam30 31.3 -> 46.9, light 52.3 -> 62.5; view1 light 18.8 -> 39.4.
+- GRPO `vlm_grpo_self` (job 6ae965260e0338d1bb7ee08c, from vlm_self_sft, `--rich data/rich/train data/rich/real_train
+  data/rich/real_rand/rand_a data/rich/real_rand/rand_b --rich_w 0.3 0.4 0.15 0.15 --rich_p 0.6 --detail_w 0.4`,
+  RAND=1): ~2.3 min/step with 4 validation sets + detail scoring, hit the 12 h timeout at ~step 320 of 400 (~$60);
+  **checkpoint = step 300**. Validation step 0 -> 300: real own/detail 63.5/67.8 -> 66.2/69.8, rand_a 55.3 -> 57.2,
+  rand_b 52.2 -> 55.1, DeepCAD view4 91.5 -> 93.8, view1 85.4 -> 88.4, generated 76.2 -> 75.6.
+- **Test, one answer, paired vs vlm_grpo_real2** (`results/gself_*`), own IoU (detail):
+  | input | real (normal) | cam15 | cam30 | light |
+  |---|---|---|---|---|
+  | view4 | 65.1 -> **66.5** (+1.3 +- 0.9; detail 68.8) | 36.2 -> **54.4** (+18.2) | 31.3 -> **47.1** (+15.9) | 52.3 -> **64.5** (+12.2) |
+  | view1 | 59.5 -> **59.9** (+0.4) | 44.7 -> **50.4** (+5.7) | 29.7 -> **38.0** (+8.3) | 18.8 -> **42.8** (+24.0) |
+  DeepCAD (gt): view4 91.0 (vs 91.4), view1 86.5 (=), view1+expert 89.3, expert 79.8 — level. One answer on real
+  parts now equals Claude Opus 5.5 zero-shot (66.5 vs 66.5; detail 68.8 vs 69.7) and is far more robust to lighting
+  than before; camera rotations still cost 12-19 points. Full pipeline (orient + guarded revision) not yet run on it.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
@@ -776,7 +800,7 @@ bounding box inflated by stray geometry: 8-13 of ~1970 valid parts for our model
 of own IoU (rankings unchanged). Prefer gt IoU when the two disagree; the gallery labels tiles with gt IoU.
 
 ## Handoff (2026-10-25)
-- **Best model: `results/vlm_grpo_real2/model`** (one more real-part RL round on `vlm_grpo_real`, +0.8 real, +0.9
+- **Best model: `results/vlm_grpo_self/model` (step 300; see the self-improvement section)**; previous: `results/vlm_grpo_real2/model` (one more real-part RL round on `vlm_grpo_real`, +0.8 real, +0.9
   generated, DeepCAD level) (vlm_grpo_fullres -> imitation on DeepCAD + CAD-Recode + generated rich
   parts + revision -> online RL on DeepCAD + generated -> online RL with real Fusion 360 parts). Inference pipeline:
   turn 1 -> `scripts/orient_fix.py` -> revision turn (`scripts/revise_vllm.py --rounds 1`) -> orient -> guard
