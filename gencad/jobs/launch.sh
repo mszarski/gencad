@@ -58,7 +58,7 @@ SNAP=$(mktemp -d)/code
 mkdir -p "$SNAP"
 tar -chf - --exclude=./upstream --exclude=.git --exclude=__pycache__ --exclude=./results \
     --exclude=./data/emb --exclude=./data/dp --exclude=./data/cad_vec --exclude=./data/images \
-    --exclude=./data/sketches . | tar -xf - -C "$SNAP"   # -h follows the setup.sh symlinks
+    --exclude=./data/sketches --exclude=./data/rich --exclude="./data/*.tar" . | tar -xf - -C "$SNAP"   # -h follows the setup.sh symlinks
 
 ENVS=()
 for k in INIT CHUNKS SPLIT RICH RICH_TEST REV REV_RICH RICH_SHARDS REAL SHARD N_SHARDS VLLM_NIGHTLY TEACHER RAND SELF PRIOR INIT_PRIOR PREDS RUN EPOCHS BS LR STEPS SAVE_EVERY CSR_CKPT CCIP_CKPT DP_CKPT IMG_TYPE OCC HUB_REPO; do

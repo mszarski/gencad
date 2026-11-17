@@ -287,6 +287,7 @@ case "$STAGE" in
   selfsample) # our model's greedy + sampled programs on rich/real train parts (scripts/sample_real.py); INIT = model dir
     need_vllm   # REAL=1 unpacks the real training parts; writes results/$RUN_<shard>/preds.pkl (score each with richiou)
     if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
+    if [[ "${RICH_TEST:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/test*.tar; do tar -xf "$t" -C data/rich; done; fi
     python scripts/sample_real.py --model "${INIT:?set INIT=<model dir>}" --out "results/$RUN" "$@" ;;
 
   variants)   # randomised re-renders of rich/real parts (scripts/render_variants.py) -> /work/data/rich/real_rand_<shard>.tar
