@@ -111,14 +111,17 @@ def _messages(image, prompt):
     return [{"role": "user", "content": content}]
 
 
-def revision_text(prompt, attempt, error=None):
+def revision_text(prompt, attempt, error=None, features=None):
     """Prompt of a revision turn (build-inspect-fix): the task, the previous program, and what happened when it was
-    built: the build error, or (error None) its render, given as the second image with the same cameras as the input."""
+    built: the build error, or (error None) its render, given as the second image with the same cameras as the input,
+    plus optionally a feature summary of what it builds (mm.features.summary: holes, fillets, chamfers, ...)."""
     head = (prompt + "\n\n") if prompt else INSTRUCTION + "\n\n"
     if error:
         result = f"It failed to build: {error}"
     else:
         result = "The second image shows what it builds, rendered with the same cameras as the first image."
+        if features:
+            result += f"\nFeature check of what it builds: {features}."
     return (f"{head}A previous attempt:\n{attempt}\n\n{result}\n"
             "Write the corrected program (or repeat it if it is already right).")
 

@@ -159,3 +159,50 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+KEY_FAMILIES = ("holes", "fillets", "chamfers", "slots", "pockets", "prismatic_pockets", "bosses", "step_levels",
+                "turned_steps", "grooves", "hole_patterns", "section_recesses")
+
+
+def feat_f1(row):
+    """Feature F1 over KEY_FAMILIES from a work() row (1.0 when neither solid has any of them)."""
+    if row is None:
+        return 0.0
+    tp = sum(row["fam"].get(f, {}).get("tp", 0) for f in KEY_FAMILIES)
+    ng = sum(row["fam"].get(f, {}).get("n_gt", 0) for f in KEY_FAMILIES)
+    npr = sum(row["fam"].get(f, {}).get("n_pred", 0) for f in KEY_FAMILIES)
+    if ng + npr == 0:
+        return 1.0
+    return 2 * tp / (ng + npr)
+
+
+def rich_score_feat(args):
+    """scripts/rich_iou.score + "feat" (feature F1 vs GT): the reward pieces for RL on rich/real parts."""
+    gt_code, pred = args
+    from scripts.rich_iou import score
+    r = score((gt_code, pred))
+    if r is not None and r.get("valid"):
+        try:
+            r["feat"] = feat_f1(work((gt_code, pred, 5.0, 0.25)))
+        except Exception:  # noqa: BLE001
+            r["feat"] = 0.0
+    return r
+
+
+def attempt_state(args):
+    """Build + render a program with the input cameras and summarise its features (the edit loop's observation).
+    -> (error or None, render stem or None, feature summary or None)."""
+    code, rid, scratch = args
+    from scripts.build_revision import work as render_attempt
+    os.makedirs(os.path.join(scratch, "attempts"), exist_ok=True)
+    _, err, stem = render_attempt((rid, code, scratch))
+    if err or not stem:
+        return err or "render failed", None, None
+    try:
+        from mm.cadquery_io import run_cadquery
+        from mm.features import recognise, summary
+        R = recognise(run_cadquery(code))
+        return None, stem, (summary(R[1]) if R else None)
+    except Exception:  # noqa: BLE001
+        return None, stem, None

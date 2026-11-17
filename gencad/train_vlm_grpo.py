@@ -6,6 +6,11 @@ view1+expert), --group programs each at --temp, reward = GT IoU (scripts/cq_iou.
 --invalid_reward, advantage = (r - group mean) / (group std + eps); groups without spread are dropped. One optimizer
 step per batch on exactly the sampled tokens, so the policy is on-policy (importance ratio 1, no clipping needed).
 Loss = -mean over sequences of A * mean token log-prob. No KL term.
+Rich/real parts: reward = (1 - detail_w - feat_w) own IoU + detail_w detail + feat_w feature F1 (quiddity).
+Edit turn (--edit_p): for a share of rich prompts, one turn-1 sample is built, rendered with the input cameras and
+feature-checked (quiddity summary, or its build error); --group edits of it are sampled (mm.vlm_cad.revision_text
+prompt, input + render images) and rewarded the same way, with their own group-normalised advantages. Both turns are
+trained in the same step.
 Validation = the 256 val parts of train_vlm_cq.py, greedy, through vLLM (view1 = render 0, view4, view1+expert).
 A weight-sync check compares vLLM's and the HF model's log-prob of one fixed program before and after step 1.
 
@@ -72,6 +77,11 @@ def main():
     ap.add_argument("--invalid_reward", type=float, default=-0.5)
     ap.add_argument("--detail_w", type=float, default=0.0,
                     help="rich/real parts: reward = (1 - w) * own IoU + w * detail score (mm/detail.py)")
+    ap.add_argument("--feat_w", type=float, default=0.0,
+                    help="rich/real reward weight of quiddity feature F1 vs GT (scripts/feature_match.py)")
+    ap.add_argument("--edit_p", type=float, default=0.0,
+                    help="share of rich prompts that also get an edit turn: one turn-1 sample is built, rendered and "
+                         "feature-checked (quiddity), and --group edits of it are sampled and rewarded")
     ap.add_argument("--micro", type=int, default=16)
     ap.add_argument("--lr", type=float, default=2e-6)
     ap.add_argument("--warmup", type=int, default=20)
@@ -88,6 +98,11 @@ def main():
     from pebble import ProcessPool
     from scripts.cq_iou import score
     from scripts.rich_iou import score as rich_score
+    from scripts.feature_match import attempt_state, rich_score_feat
+    from mm.vlm_cad import revision_text
+    if a.feat_w > 0:
+        rich_score = rich_score_feat  # noqa: F811
+    scratch = os.path.join("/tmp", f"edit_{a.name}")
     pool = ProcessPool(max_workers=a.workers)            # before CUDA: workers fork clean
     rng = random.Random(a.seed)
     torch.manual_seed(a.seed)
@@ -160,7 +175,7 @@ def main():
     from vllm import LLM, SamplingParams
     from transformers import AutoProcessor
     processor = AutoProcessor.from_pretrained(a.init)
-    llm = LLM(model=a.init, dtype="bfloat16", max_model_len=a.max_len, limit_mm_per_prompt={"image": 1},
+    llm = LLM(model=a.init, dtype="bfloat16", max_model_len=a.max_len, limit_mm_per_prompt={"image": 2 if a.edit_p > 0 else 1},
               gpu_memory_utilization=a.gpu_mem, enable_prefix_caching=True, generation_config="vllm", seed=a.seed)
     vmodel = vllm_model(llm)
     tok = processor.tokenizer
@@ -202,6 +217,35 @@ def main():
                 res.append({"valid": False, "gt": 0.0, "own": 0.0, "failed": True})
         return res
 
+    def reward(r, u):
+        if r is None:
+            return np.nan
+        if not r["valid"]:
+            return a.invalid_reward
+        if not u.startswith("rich:"):
+            return r["gt"]
+        return (1 - a.detail_w - a.feat_w) * r["own"] + a.detail_w * r.get("detail", 0.0) + a.feat_w * r.get("feat", 0.0)
+
+    def edit_requests(images, codes, tag):
+        """Observation for an edit turn: render + feature summary (or build error) of each code -> requests, states."""
+        futs = [pool.schedule(attempt_state, args=((c or "", f"{tag}_{k}", scratch),), timeout=a.score_timeout)
+                for k, c in enumerate(codes)]
+        reqs, states = [], []
+        for im, c, fu in zip(images, codes, futs):
+            try:
+                err, stem, feats = fu.result()
+            except Exception:  # noqa: BLE001
+                err, stem, feats = "building it timed out", None, None
+            if not c:
+                err = "the program was empty"
+            ims = [im] if stem is None else [im, compose_views(load_views("", stem, [0, 1, 2, 3]))]
+            text = revision_text(None, c or "", err if stem is None else None, feats)
+            reqs.append({"prompt": processor.apply_chat_template(_messages(ims, text), tokenize=False,
+                                                                 add_generation_prompt=True),
+                         "multi_modal_data": {"image": ims}})
+            states.append((ims, text))
+        return reqs, states
+
     def sync():
         vmodel.load_weights(((k, v.detach().to(torch.bfloat16)) for k, v in vlm.model.state_dict().items()))
         llm.reset_prefix_cache()
@@ -236,11 +280,22 @@ def main():
         for name, vk in val_by_dir:                   # held-out parts of each --rich dir, 4 views, own IoU
             reqs = [request(*inputs(u, "view4", True)) for u in vk]
             codes = [o.outputs[0].text.strip() or None for o in llm.generate(reqs, greedy, use_tqdm=False)]
-            rs = [r for r in scores(codes, vk) if r is not None]
+            rs_all = scores(codes, vk)
+            rs = [r for r in rs_all if r is not None]
             key = "rich_view4" if name == "train" else f"{name}_view4"
             rec[key] = {"iou_own": round(100 * float(np.mean([r["own"] for r in rs])), 2),
                         "detail": round(100 * float(np.mean([r.get("detail", 0.0) for r in rs])), 2),
                         "invalid": round(float(np.mean([not r["valid"] for r in rs])), 4)}
+            if a.feat_w > 0:
+                rec[key]["feat"] = round(100 * float(np.mean([r.get("feat", 0.0) for r in rs])), 2)
+            if a.edit_p > 0:                          # one greedy edit turn on top (unguarded)
+                ereqs, _ = edit_requests([inputs(u, "view4", True)[0] for u in vk], codes, f"val{step}_{name}")
+                ecodes = [o.outputs[0].text.strip() or None for o in llm.generate(ereqs, greedy, use_tqdm=False)]
+                es = scores(ecodes, vk)
+                pairs = [(r0, r1) for r0, r1 in zip(rs_all, es) if r0 is not None and r1 is not None]
+                rec[key]["edit_own"] = round(100 * float(np.mean([r1["own"] for _, r1 in pairs])), 2)
+                rec[key]["edit_reward_gain"] = round(100 * float(np.mean([reward(r1, "rich:") - reward(r0, "rich:")
+                                                                         for r0, r1 in pairs])), 2)
         rec["eval_sec"] = round(time.time() - t0)
         emit(rec)
 
@@ -273,13 +328,43 @@ def main():
         rs = scores(codes, [u for u in uids for _ in range(a.group)])
         t_score = time.time() - t0 - t_gen
         rew_uids = [u for u in uids for _ in range(a.group)]
-        R = np.array([np.nan if r is None else (((1 - a.detail_w) * r["own"] + a.detail_w * r.get("detail", 0.0)
-                                                  if u.startswith("rich:") else r["gt"]) if r["valid"]
-                      else a.invalid_reward) for r, u in zip(rs, rew_uids)])   # rich: size unobservable -> own IoU
+        R = np.array([reward(r, u) for r, u in zip(rs, rew_uids)])   # rich: size unobservable -> own IoU (+ detail)
         R = R.reshape(a.prompts, a.group)
-        std = np.nanstd(R, axis=1, keepdims=True)
-        adv = (R - np.nanmean(R, axis=1, keepdims=True)) / (std + 1e-4)
-        keep = [i for i in range(len(seqs)) if np.isfinite(adv.flat[i]) and std.flat[i // a.group] > 1e-3 and seqs[i]]
+        # sequences to train on: (token ids, images, prompt text or None, advantage)
+        seq_img = [items[i // a.group][0] for i in range(len(seqs))]
+        seq_txt = [items[i // a.group][1] for i in range(len(seqs))]
+        groups = [R]
+        ed_info = {}
+        if a.edit_p > 0:                              # edit turn: start from one turn-1 sample per chosen rich prompt
+            ep = [p for p, u in enumerate(uids) if u.startswith("rich:") and rng.random() < a.edit_p]
+            if ep:
+                starts = [p * a.group + rng.randrange(a.group) for p in ep]
+                ereqs, states = edit_requests([items[p][0] for p in ep], [codes[k] for k in starts], f"s{step}")
+                eouts = llm.generate(ereqs, sp, use_tqdm=False)
+                eseqs = [list(c.token_ids) for o in eouts for c in o.outputs]
+                ecodes = [c.text.strip() or None for o in eouts for c in o.outputs]
+                ers = scores(ecodes, [uids[p] for p in ep for _ in range(a.group)])
+                ER = np.array([reward(r, uids[p]) for r, p in zip(ers, [p for p in ep for _ in range(a.group)])])
+                ER = ER.reshape(len(ep), a.group)
+                R0 = np.array([R.flat[k] for k in starts])
+                ed_info = {"edit_n": len(ep), "edit_start": round(float(np.nanmean(R0)), 4),
+                           "edit_reward": round(float(np.nanmean(ER)), 4),
+                           "edit_better": round(float(np.nanmean(ER > R0[:, None] + 0.01)), 3)}
+                seqs += eseqs
+                codes += ecodes
+                seq_img += [states[j][0] for j in range(len(ep)) for _ in range(a.group)]
+                seq_txt += [states[j][1] for j in range(len(ep)) for _ in range(a.group)]
+                groups.append(ER)
+        adv_l, keep, off = [], [], 0
+        for G in groups:
+            std = np.nanstd(G, axis=1, keepdims=True)
+            adv_g = (G - np.nanmean(G, axis=1, keepdims=True)) / (std + 1e-4)
+            for i in range(G.size):
+                if np.isfinite(adv_g.flat[i]) and std.flat[i // a.group] > 1e-3 and seqs[off + i]:
+                    keep.append(off + i)
+            adv_l.append(adv_g.reshape(-1))
+            off += G.size
+        adv = np.concatenate(adv_l)
 
         vlm.model.train()
         vlm.model.config.use_cache = False
@@ -287,8 +372,7 @@ def main():
         loss_sum = 0.0
         for s in range(0, len(keep), a.micro):
             idx = keep[s: s + a.micro]
-            enc = encode_batch(vlm.processor, [items[i // a.group][0] for i in idx],
-                               [items[i // a.group][1] for i in idx])
+            enc = encode_batch(vlm.processor, [seq_img[i] for i in idx], [seq_txt[i] for i in idx])
             P = enc["input_ids"].shape[1]
             L = max(len(seqs[i]) for i in idx)
             gen_ids = torch.full((len(idx), L), tok.pad_token_id, dtype=torch.long)
@@ -326,7 +410,7 @@ def main():
               "invalid": round(float(np.mean([not r["valid"] for r in valid])), 4), "kept": len(keep),
               "len": round(float(np.mean([len(s) for s in seqs])), 1), "loss": round(loss_sum, 5),
               "gnorm": round(gnorm, 3), "lr": sched.get_last_lr()[0], "t_gen": round(t_gen, 1),
-              "t_score": round(t_score, 1), "sec": round(time.time() - t0, 1)})
+              "t_score": round(t_score, 1), "sec": round(time.time() - t0, 1), **ed_info})
         if step % a.eval_every == 0 or step == a.steps:
             evaluate(step)
         if step % a.save_every == 0 or step == a.steps:

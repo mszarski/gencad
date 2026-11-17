@@ -49,7 +49,7 @@ class Samples(Dataset):
             image = compose_views([load_views("", stem, [v])[0] for v in views])
             if rev["attempt_stem"]:
                 image = [image, compose_views([load_views("", rev["attempt_stem"], [v])[0] for v in views])]
-            return image, revision_text(prompt, rev["attempt"], rev["error"]), code
+            return image, revision_text(prompt, rev["attempt"], rev["error"], rev.get("features")), code
         if len(self.items[i]) > 3:
             views, prompt = self.items[i][3]
             return compose_views([load_views("", stem, [v])[0] for v in views]), prompt, code
@@ -275,6 +275,8 @@ def main():
         n_root_kind = rv.groupby(["root", "k2"]).size().to_dict()
         for row in rv.itertuples():
             rev = {"attempt": row.attempt, "error": row.error if isinstance(row.error, str) else None,
+                   "features": getattr(row, "features", None) if isinstance(getattr(row, "features", None), str)
+                   else None,
                    "attempt_stem": os.path.join(row.root, row.attempt_stem) if isinstance(row.attempt_stem, str)
                    else None}
             stem = row.input_stem if isinstance(row.input_stem, str) else os.path.join(render_dir, row.uid)

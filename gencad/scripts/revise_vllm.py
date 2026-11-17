@@ -20,8 +20,10 @@ from mm.sysutil import usable_cpus  # noqa: E402
 
 
 def attempt_feedback(args):
-    """Build `code`; -> (error text or None, render stem or None). Renders all 4 cameras like the input renders."""
-    code, stem = args
+    """Build `code`; -> (error text or None, render stem or None[, feature summary]). Renders all 4 cameras like the
+    input renders; with a third arg True also returns quiddity's feature summary (mm/features.py)."""
+    code, stem = args[:2]
+    feats = len(args) > 2 and args[2]
     from scripts.build_revision import error_of
     from scripts.render_views import DIRS, render, tessellate_cq
     if not code:
@@ -33,6 +35,13 @@ def attempt_feedback(args):
     os.makedirs(os.path.dirname(stem), exist_ok=True)
     for j, d in enumerate(DIRS):
         render(tris, fid, d).save(f"{stem}_{j}.png")
+    if feats:
+        try:
+            from mm.features import recognise, summary
+            R = recognise(shape)
+            return None, stem, (summary(R[1]) if R else None)
+        except Exception:  # noqa: BLE001
+            return None, stem, None
     return None, stem
 
 
@@ -45,6 +54,8 @@ def main():
     ap.add_argument("--modes", nargs="*", default=["view1", "view4", "view1+expert"])
     ap.add_argument("--rounds", type=int, default=1)
     ap.add_argument("--revise_model", default=None, help="model for the revision turns (default: --model)")
+    ap.add_argument("--features", action="store_true", help="add quiddity's feature summary of the attempt to the "
+                    "revision prompt (models trained with feature-edit data / the RL edit turn)")
     ap.add_argument("--max_new_tokens", type=int, default=1024)
     ap.add_argument("--max_len", type=int, default=8192)
     ap.add_argument("--workers", type=int, default=max(1, usable_cpus() - 2))
@@ -113,25 +124,26 @@ def main():
             rows[i] = c
         preds[f"vlm_cq:{mode}"] = rows
         for k in range(1, a.rounds + 1):
-            futs = [pool.schedule(attempt_feedback, args=((c, os.path.join(a.scratch, mode, f"r{k}", str(i))),),
-                                  timeout=120) for i, c in zip(idx, cur)]
+            futs = [pool.schedule(attempt_feedback, args=((c, os.path.join(a.scratch, mode, f"r{k}", str(i)),
+                                                            a.features),), timeout=120) for i, c in zip(idx, cur)]
             fb = []
             for fu in futs:
                 try:
-                    fb.append(fu.result())
+                    r = fu.result()
+                    fb.append((r[0], r[1], r[2] if len(r) > 2 else None))
                 except Exception as e:  # noqa: BLE001
-                    fb.append((f"building it timed out ({type(e).__name__})", None))
+                    fb.append((f"building it timed out ({type(e).__name__})", None, None))
             reqs = []
-            for im, p, c, (err, st) in zip(inputs, prompts, cur, fb):
+            for im, p, c, (err, st, ft) in zip(inputs, prompts, cur, fb):
                 imgs = [im] + ([compose_views(load_views("", st, views))] if st else [])
-                reqs.append(request(imgs, revision_text(p, c or "", err)))
+                reqs.append(request(imgs, revision_text(p, c or "", err, ft)))
             new = [o.outputs[0].text.strip() or None for o in llm_rev.generate(reqs, sp, use_tqdm=False)]
             chk = [pool.schedule(attempt_feedback, args=((c, os.path.join(a.scratch, mode, f"c{k}", str(i))),),
                                  timeout=120) for i, c in zip(idx, new)]
             nxt, changed = [], 0
             for c_old, c_new, fu in zip(cur, new, chk):
                 try:
-                    err, _ = fu.result()
+                    err = fu.result()[0]
                 except Exception:  # noqa: BLE001
                     err = "timeout"
                 keep_new = err is None or c_old is None
@@ -142,7 +154,7 @@ def main():
             for i, c in zip(idx, cur):
                 rows[i] = c
             preds[f"vlm_cq:{mode}@r{k}"] = rows
-            stats[f"{mode}@r{k}"] = {"changed": changed, "turn1_failed": sum(e is not None for e, _ in fb)}
+            stats[f"{mode}@r{k}"] = {"changed": changed, "turn1_failed": sum(f[0] is not None for f in fb)}
             print(f"[revise] {mode} round {k}: changed {changed}/{len(idx)}; turn-1 failed to build "
                   f"{stats[f'{mode}@r{k}']['turn1_failed']}", flush=True)
         print(f"[revise] {mode} done in {time.time() - t0:.0f}s", flush=True)

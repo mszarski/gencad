@@ -172,6 +172,7 @@ case "$STAGE" in
     if [[ "${RICH:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/train_*.tar; do tar -xf "$t" -C data/rich; done; fi
     if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
     if [[ "${RAND:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_rand_*.tar; do tar -xf "$t" -C data/rich; done; fi
+    pip install -q quiddity
     python train_vlm_grpo.py --data data --name "$RUN" --init "${INIT:-results/vlm_rft_v1/model}" ${STEPS:+--steps $STEPS} "$@" ;;
 
   revise)     # build-inspect-fix inference (scripts/revise_vllm.py) -> results/$RUN/revise.pkl; INIT = model dir
@@ -179,6 +180,7 @@ case "$STAGE" in
     if [[ "${RICH_TEST:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/test*.tar; do tar -xf "$t" -C data/rich; done; fi
     need_cq
     need_vllm
+    pip install -q quiddity
     python scripts/revise_vllm.py --data data --model "${INIT:?set INIT=<model dir>}" \
         --uids_from results/baselines_vlm_final/preds.pkl --out "results/$RUN/revise.pkl" "$@" ;;
 
@@ -289,6 +291,15 @@ case "$STAGE" in
     if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
     if [[ "${RICH_TEST:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/test*.tar; do tar -xf "$t" -C data/rich; done; fi
     python scripts/sample_real.py --model "${INIT:?set INIT=<model dir>}" --out "results/$RUN" "$@" ;;
+
+  featedit)   # feature-edit revision data (scripts/build_feature_edits.py, quiddity) -> /work/data/feat_edits.tar
+    need_cq     # self targets on real parts (renders from real_train) + generator programs of RICH_SHARDS
+    pip install -q quiddity
+    tar -xf /work/data/self_real.tar -C data
+    mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done
+    for sh in ${RICH_SHARDS:-0 20}; do tar -xf "/work/data/rich/train_$sh.tar" -C data/rich; done
+    python scripts/build_feature_edits.py --targets data/self_real/targets.parquet --rich data/rich/train --out data/feat_edits "$@"
+    tar -cf /work/data/feat_edits.tar -C data feat_edits && ls -la /work/data/feat_edits.tar ;;
 
   variants)   # randomised re-renders of rich/real parts (scripts/render_variants.py) -> /work/data/rich/real_rand_<shard>.tar
     need_cq     # REAL=1 unpacks the real training parts; SHARD = which shard dir to render
