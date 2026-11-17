@@ -17,6 +17,9 @@ RUN=${RUN:-$STAGE}
 echo "=== stage=$STAGE run=$RUN $(date -u) ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
+# one thread per process for numeric libraries: CPU pools size themselves (mm/sysutil.usable_cpus), and libraries
+# that read the host CPU count (OpenBLAS: 128 threads per worker) exhausted the job's thread limit
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 RAYON_NUM_THREADS=1
 cp -r /code /app && cd /app
 pip install -q -r jobs/requirements-job.txt
 if [[ "${OCC:-0}" == "1" ]]; then conda install -y -q -c conda-forge pythonocc-core=7.9.0; fi

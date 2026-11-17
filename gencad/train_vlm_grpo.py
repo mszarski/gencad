@@ -27,7 +27,7 @@ import numpy as np
 from mm.sysutil import usable_cpus  # noqa: E402
 
 for _k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "RAYON_NUM_THREADS"):
-    os.environ.setdefault(_k, "1")   # scoring workers: one thread each (host CPU count -> 128 threads per worker
+    os.environ[_k] = "1"             # scoring workers: one thread each (host CPU count -> 128 threads per worker
                                      # exhausted the job's thread limit and broke the pool)
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")      # FlashInfer JIT-compiles its sampler: needs nvcc
 os.environ.setdefault("VLLM_ENABLE_V1_MULTIPROCESSING", "0")   # engine in this process, so weights can be loaded
