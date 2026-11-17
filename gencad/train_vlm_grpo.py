@@ -386,7 +386,7 @@ def main():
             enc["input_ids"] = torch.cat([enc["input_ids"], gen_ids], 1)
             enc = enc.to("cuda")
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                logits = vlm.model(**enc).logits[:, P - 1: -1].float()
+                logits = vlm.model(**enc, logits_to_keep=L + 1).logits[:, :-1].float()   # only generated positions
             lp = torch.log_softmax(logits, -1).gather(-1, enc["input_ids"][:, P:, None]).squeeze(-1)
             m = gen_mask.to(lp.device).float()
             A = torch.tensor([adv.flat[i] for i in idx], dtype=torch.float32, device=lp.device)
