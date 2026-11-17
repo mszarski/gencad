@@ -84,15 +84,22 @@ def _fit100(shape):
     return shape.translate(tuple(-v for v in c)).scale(100.0 / max(bb.xlen, bb.ylen, bb.zlen))
 
 
+_GT_CACHE = {}   # per worker process: GT code -> fitted features (GT parts repeat across RL steps)
+
+
 def work(args):
     gt_code, pred, loc_tol, size_tol = args
     from mm.cadquery_io import run_cadquery
-    gt = run_cadquery(gt_code)
-    if gt is None:
-        return None
-    try:
-        FG = features(_fit100(gt))
-    except Exception:  # noqa: BLE001
+    if gt_code not in _GT_CACHE:
+        gt = run_cadquery(gt_code)
+        try:
+            _GT_CACHE[gt_code] = features(_fit100(gt)) if gt is not None else None
+        except Exception:  # noqa: BLE001
+            _GT_CACHE[gt_code] = None
+        if len(_GT_CACHE) > 20000:
+            _GT_CACHE.clear()
+    FG = _GT_CACHE[gt_code]
+    if FG is None:
         return None
     p = run_cadquery(pred) if pred else None
     try:
