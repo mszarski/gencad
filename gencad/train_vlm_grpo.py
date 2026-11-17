@@ -83,6 +83,10 @@ def main():
                     help="share of rich prompts that also get an edit turn: one turn-1 sample is built, rendered and "
                          "feature-checked (quiddity), and --group edits of it are sampled and rewarded")
     ap.add_argument("--micro", type=int, default=16)
+    ap.add_argument("--micro_tokens", type=int, default=40000,
+                    help="cap on (prompt + generated tokens) x sequences per micro-batch (long edit prompts)")
+    ap.add_argument("--micro_gen_tokens", type=int, default=6000,
+                    help="cap on generated tokens x sequences per micro-batch (full-vocab logits dominate memory)")
     ap.add_argument("--lr", type=float, default=2e-6)
     ap.add_argument("--warmup", type=int, default=20)
     ap.add_argument("--steps", type=int, default=600)
@@ -370,8 +374,21 @@ def main():
         vlm.model.config.use_cache = False
         vlm.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         loss_sum = 0.0
-        for s in range(0, len(keep), a.micro):
-            idx = keep[s: s + a.micro]
+        def plen(i):                                  # rough prompt length: images + text
+            ims = seq_img[i] if isinstance(seq_img[i], list) else [seq_img[i]]
+            return sum(im.size[0] * im.size[1] // 1024 for im in ims) + len(seq_txt[i] or "") // 3 + 100
+        batches, cur, cur_max, cur_gen = [], [], 0, 0
+        for i in keep:
+            t, g = plen(i) + len(seqs[i]), len(seqs[i])
+            if cur and (len(cur) >= a.micro or max(cur_max, t) * (len(cur) + 1) > a.micro_tokens
+                        or max(cur_gen, g) * (len(cur) + 1) > a.micro_gen_tokens):
+                batches.append(cur)
+                cur, cur_max, cur_gen = [], 0, 0
+            cur.append(i)
+            cur_max, cur_gen = max(cur_max, t), max(cur_gen, g)
+        if cur:
+            batches.append(cur)
+        for idx in batches:
             enc = encode_batch(vlm.processor, [seq_img[i] for i in idx], [seq_txt[i] for i in idx])
             P = enc["input_ids"].shape[1]
             L = max(len(seqs[i]) for i in idx)
