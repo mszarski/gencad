@@ -790,6 +790,28 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
   parts now equals Claude Opus 5.5 zero-shot (66.5 vs 66.5; detail 68.8 vs 69.7) and is far more robust to lighting
   than before; camera rotations still cost 12-19 points. Full pipeline (orient + guarded revision) not yet run on it.
 
+### Rotation diagnosis, full pipeline and best-of-9 on `vlm_grpo_self`; quiddity feature check (Nov 17)
+- **Camera rotation loss is shape, not orientation** (`scripts/aligned_iou.py`: ICP from the 24 axis rotations, own IoU
+  after the best rigid alignment; `results/aligned/`). view4 own -> aligned: normal 66.5 -> 68.8, cam15 54.4 -> 57.6,
+  cam30 47.1 -> 51.1. Paired drop vs normal: cam15 -12.1 (aligned -11.2), cam30 -19.3 (aligned -17.7). Of parts losing
+  > 0.1, rotation recovers more than half the loss for 19/264 (cam15), 32/347 (cam30). Jittered views (each view tilted
+  differently) make the model misread geometry; fix by training on more varied cameras, not by inference search.
+- **Full pipeline** (revise job `gfull_real`, orient `gor_real_view{4,1}`, merged + guard `results/gfull_real_o`):
+  real view4 **69.0** (vs vlm_grpo_real2 pipeline 68.0, +0.93 +- 0.80; vs Claude 66.5, **+2.51 +- 1.09**), view1 62.3
+  (-0.25 +- 0.77 vs real2; +12.1 vs Claude).
+- **Best-of-9 by render agreement** (`selfsample` job with RICH_TEST=1 -> `results/gbon_real_0`, richiou job,
+  `scripts/pick_render.py`): greedy + 8 samples (T 0.8), pick by pix agreement with the 4 input views (no GT). own /
+  detail: greedy 66.7 / 69.2; best-of-3 69.9 / 72.0; best-of-5 71.1 / 72.9; **best-of-9 71.9 / 73.6** (valid 99.7 %);
+  oracle 75.4. Paired: +5.22 +- 0.64 vs greedy (150 parts better by > 0.05, 27 worse), **+5.44 +- 1.07 vs Claude
+  Opus 5.5** (detail 73.6 vs 69.7), +2.93 +- 0.62 vs the full pipeline. Cheapest strong inference: best-of-9.
+- **Feature-level check with quiddity** (`scripts/feature_match.py`; rule-based STEP feature recogniser, Apache-2.0,
+  `pip install quiddity`; both solids fitted to a 100-unit box, features matched by family, axis line within 5 units,
+  size within 25 %; `results/feat/`). view4, 600 real parts, features predicted / recall / precision (GT count):
+  all 3677 / 0.25 / 0.45 ours vs 5210 / 0.37 / 0.47 Opus (6540 GT); holes 464 / 0.40 / 0.59 vs 684 / 0.60 / 0.60 (683);
+  fillets 107 / 0.02 vs 524 / 0.10 (1058); chamfers 105 / 0.07 vs 482 / 0.09 (512); step levels 0.44 vs 0.68; slots
+  0.24 vs 0.65; turned steps 0.37 vs 0.79. We under-produce features (about half the GT count); Opus writes as many
+  as the GT but places small fillets/chamfers badly too. ~0.1 s per part: usable as an RL reward term.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
