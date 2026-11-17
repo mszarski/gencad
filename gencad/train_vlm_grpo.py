@@ -26,6 +26,9 @@ import time
 import numpy as np
 from mm.sysutil import usable_cpus  # noqa: E402
 
+for _k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "RAYON_NUM_THREADS"):
+    os.environ.setdefault(_k, "1")   # scoring workers: one thread each (host CPU count -> 128 threads per worker
+                                     # exhausted the job's thread limit and broke the pool)
 os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")      # FlashInfer JIT-compiles its sampler: needs nvcc
 os.environ.setdefault("VLLM_ENABLE_V1_MULTIPROCESSING", "0")   # engine in this process, so weights can be loaded
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -107,7 +110,7 @@ def main():
     if a.feat_w > 0:
         rich_score = rich_score_feat  # noqa: F811
     scratch = os.path.join("/tmp", f"edit_{a.name}")
-    pool = ProcessPool(max_workers=a.workers)            # before CUDA: workers fork clean
+    pool = ProcessPool(max_workers=a.workers, max_tasks=500)   # before CUDA: workers fork clean; recycled
     rng = random.Random(a.seed)
     torch.manual_seed(a.seed)
     np.random.seed(a.seed)
