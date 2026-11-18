@@ -10,6 +10,12 @@ and is moving to its own repository; paths below are relative to `gencad/` unles
 The detailed lab notebook is `gencad/CLAUDE.md` (per-experiment sections, commands, numbers); the readable summary
 is `gencad/REPORT.md`. This file is the bridge: what matters, what is in flight, and how the user likes to work.
 
+**Update 2026-11-18:** best model is `results/vlm_grpo_self/model`; best inference is best-of-9 by render agreement
+(real view4 own 71.9 / detail 73.6, +5.4 vs Claude Opus 5.5 zero-shot 66.5); full pipeline 69.0. The multi-turn
+feature-edit + quiddity-reward round (`vlm_feat_sft` -> `vlm_grpo_feat`, ~$70 of a $90 budget) gave no test gain
+(best-of-9 71.9 / 71.7, paired +0.05 / -0.14). Details and readings: `gencad/CLAUDE.md`, sections of Nov 17-18.
+Sections below are from Nov 2.
+
 ---
 
 ## 1. Goal

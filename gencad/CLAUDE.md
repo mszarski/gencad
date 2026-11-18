@@ -812,6 +812,37 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
   0.24 vs 0.65; turned steps 0.37 vs 0.79. We under-produce features (about half the GT count); Opus writes as many
   as the GT but places small fillets/chamfers badly too. ~0.1 s per part: usable as an RL reward term.
 
+### Multi-turn feature edits + quiddity reward (`vlm_feat_sft` -> `vlm_grpo_feat`; Nov 17-18) — no gain
+- Idea (user's): make modelling a multi-turn edit loop with a feature check in the loop. quiddity
+  (`mm/features.py`: STEP face ids -> OCC faces, `recognise`, `defeature`, `summary`) reads the attempt's features
+  ("1 x hole d7.25 through; 2 x turned step"), shown in the revision prompt (`revision_text(..., features=)`,
+  `revise_vllm.py --features`).
+- Data (`scripts/build_feature_edits.py`, job `featedit`, cpu-xl): delete 1-2 feature ops (fillet/chamfer/hole/
+  sub-shape cut/union/sketch cut) from our verified real-part programs and generator programs; B must build, quiddity
+  or volume must see a change, volume change <= 40 %; train to restore A (+35 % keep rows) -> `data/feat_edits.tar`.
+- SFT `vlm_feat_sft` (from vlm_grpo_self, 2000 steps, `--revision data/revision data/rich_revision data/feat_edits
+  --revision_p 0.25 --teacher ... --teacher_p 0.25 --lr 1e-5`, ~$12): DeepCAD val view4 / view1 / view1+expert
+  92.5 / 85.3 / 90.1 (vlm_grpo_self 93.8 / 88.4: the usual SFT erosion).
+- GRPO `vlm_grpo_feat` (300 steps, `--feat_w 0.15 --detail_w 0.3 --edit_p 0.5`; per step half the rich prompts get a
+  second turn: one turn-1 sample rendered + summarised, `group` edits sampled and rewarded, advantages per turn;
+  H200, 9 h, ~$45). Infra fixes on the way: thread env forced to 1 in workers (OpenBLAS pthread failures crashed the
+  pool on H200; scoring 133 s -> 12-33 s/step; the earlier vlm_grpo_self run was probably slowed the same way),
+  token-capped micro-batches, `logits_to_keep`. Validation real own / detail / feat F1 / after edit turn:
+  s0 64.0 / 68.3 / 45.3 / 65.0; s100 66.9 / 70.7 / 45.0 / 67.1; s200 **67.4** / 69.7 / 45.8 / 67.0; s250 63.4;
+  s300 62.0 / 67.7 / 46.1 / 63.2. Feature F1 never moved; the edit turn adds 0-1 point (in training it mostly repairs
+  broken starts: edit_better 10-15 %). `save()` overwrote one `model/` dir, so the s200 checkpoint is lost
+  (fixed: `--keep_ckpts`, default on, keeps `model_s<step>`); a stale `.tmp` save from ~s100 was recovered as
+  `results/vlm_grpo_feat_s100/model`.
+- **Test, 600 real parts, view4, paired vs vlm_grpo_self** (`results/gbon_feat{,_s100}_0`, selfsample + richiou +
+  pick_render): greedy own s100 65.9 (-0.75 +- 0.81), s300 66.0 (-0.62 +- 0.79); **best-of-9 own s100 71.9
+  (+0.05 +- 0.65), s300 71.7 (-0.14 +- 0.60)**, detail 73.6 / 73.5 (= 73.6). Features of the greedy answer (s300 vs
+  self, `results/feat/gbon_*_g.pkl`): predicted 4035 vs 3778, recall 0.263 vs 0.256, holes 0.42 vs 0.40, fillets
+  0.05 vs 0.03. Full pipeline with the feature-aware edit turn not run (the model is not better).
+- Verdict: no gain at ~$70. Readings: (1) feature F1 at weight 0.15 inside a noisy own-IoU reward is too weak a signal
+  to change what the model writes; (2) the edit turn cannot add what the first answer missed when the model does not
+  see the detail in the renders (fillets 2-5 % recall: small fillets are barely visible at 448 px per view);
+  (3) val on 128 parts swings +-3, so keep every checkpoint and pick by val. Best model stays `vlm_grpo_self`.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
