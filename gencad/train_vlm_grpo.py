@@ -95,6 +95,8 @@ def main():
     ap.add_argument("--steps", type=int, default=600)
     ap.add_argument("--eval_every", type=int, default=50)
     ap.add_argument("--save_every", type=int, default=200)
+    ap.add_argument("--keep_ckpts", type=int, default=1, help="also keep each save as model_s<step> (val is noisy; "
+                    "the best step is often not the last)")
     ap.add_argument("--eval_n", type=int, default=256)
     ap.add_argument("--gpu_mem", type=float, default=0.3, help="vLLM share of GPU memory; the rest trains")
     ap.add_argument("--workers", type=int, default=max(1, usable_cpus() - 3))
@@ -307,13 +309,13 @@ def main():
         emit(rec)
 
     def save(step):
-        d = os.path.join(out, "model")
         sd = {k: v.to(torch.bfloat16) for k, v in vlm.model.state_dict().items()}
-        vlm.model.save_pretrained(d, state_dict=sd, safe_serialization=True)
-        vlm.processor.save_pretrained(d)
-        save_config(d)
-        with open(os.path.join(d, "step.json"), "w") as f:
-            json.dump({"step": step, "args": vars(a)}, f)
+        for d in [os.path.join(out, "model")] + ([os.path.join(out, f"model_s{step}")] if a.keep_ckpts else []):
+            vlm.model.save_pretrained(d, state_dict=sd, safe_serialization=True)
+            vlm.processor.save_pretrained(d)
+            save_config(d)
+            with open(os.path.join(d, "step.json"), "w") as f:
+                json.dump({"step": step, "args": vars(a)}, f)
 
     check_uid = val[0]
     check_code = llm.generate([request(*inputs(check_uid, "view4", True))],
