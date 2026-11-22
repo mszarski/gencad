@@ -19,6 +19,10 @@ Sections below are from Nov 2.
 weights of every run except `vlm_grpo_self`, `vlm_grpo_real2`, `vlm_grpo_fullres` and `vlm_cq_v1` (logs, eval
 json, preds and rows kept), and GenCAD's `data/{sketches,images}.tar`. Runs referenced below without a `model/`
 folder can no longer be loaded.
+**Second cleanup 2026-11-23** (account over its 1 TB limit): deleted `vlm_cq_v1` and `vlm_grpo_fullres` weights, the
+GenCAD latent-pipeline weights (`ckpt/`, `emb/`, `results/{mm_*,e2e_v1,ar_v1,token_cad_*,text_cad_v1}` weight files;
+their eval json kept) and this project's 232 old launch snapshots in `jobs-artifacts`. Freed 32.2 GB; bucket now
+46.7 GB. Models left: `vlm_grpo_self` (best) and `vlm_grpo_real2`.
 
 ---
 
