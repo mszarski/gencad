@@ -113,6 +113,14 @@ hf jobs logs <id> --follow                  # or: hf jobs inspect <id> --format 
 - Background watchers die after ~2 h and on container restarts (a crashed job once went unnoticed ~35 h): re-arm
   watchers that also stop on ERROR, and check job state directly.
 - `pkill -f <pattern>` can kill your own shell; kill by PID.
+- **Storage: the HF account has a 1 TB private limit shared by all projects.** Over it, every upload fails with 403,
+  including the `hf jobs` script snapshot. Keep only each run's final model and best-val checkpoint
+  (`train_vlm_grpo.py --keep_ckpts` prunes the rest at the end). Once a newer best is confirmed, delete the weights
+  of superseded runs and keep their small json/pkl results. The bucket is the model store: don't push models to Hub
+  repos. If one ever must go to a repo, push a LoRA adapter, not merged weights, and never overwrite big files in
+  place (history keeps every copy until `super_squash_history`). Interrupted saves leave 4.9 GB `.tmp*` files in
+  `model/` dirs: delete them after each run. Jobs write to `/work` (the bucket mount) as they go, so a failed final
+  upload doesn't lose a run. Keep the launch snapshot small: `launch.sh` excludes `data/rich` and `data/*.tar`.
 
 ## Evaluation conventions
 
