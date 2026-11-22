@@ -95,8 +95,8 @@ def main():
     ap.add_argument("--steps", type=int, default=600)
     ap.add_argument("--eval_every", type=int, default=50)
     ap.add_argument("--save_every", type=int, default=200)
-    ap.add_argument("--keep_ckpts", type=int, default=1, help="also keep each save as model_s<step> (val is noisy; "
-                    "the best step is often not the last)")
+    ap.add_argument("--keep_ckpts", type=int, default=1, help="also save each checkpoint as model_s<step> (val is noisy; "
+                    "the best step is often not the last); at the end only the best-val one is kept, the rest deleted")
     ap.add_argument("--eval_n", type=int, default=256)
     ap.add_argument("--gpu_mem", type=float, default=0.3, help="vLLM share of GPU memory; the rest trains")
     ap.add_argument("--workers", type=int, default=max(1, usable_cpus() - 3))
@@ -276,6 +276,8 @@ def main():
         lh = float((lp * (tgt != -100)).sum())
         emit({"sync_check": tag, "vllm_logp": round(lv, 3), "hf_logp": round(lh, 3)})
 
+    val_hist = {}   # step -> headline validation score (real own IoU if present), to keep only the best checkpoint
+
     def evaluate(step):
         t0 = time.time()
         rec = {"step": step}
@@ -307,6 +309,10 @@ def main():
                                                                          for r0, r1 in pairs])), 2)
         rec["eval_sec"] = round(time.time() - t0)
         emit(rec)
+        vk = next((k for k in ("real_train_view4", "rich_view4") if k in rec), None)
+        score = rec[vk]["iou_own"] if vk else rec.get("view4", {}).get("iou_gt")
+        if score is not None:
+            val_hist[step] = score
 
     def save(step):
         sd = {k: v.to(torch.bfloat16) for k, v in vlm.model.state_dict().items()}
@@ -438,6 +444,14 @@ def main():
         if step % a.save_every == 0 or step == a.steps:
             save(step)
     pool.close()
+    if a.keep_ckpts:   # storage: keep only the best-val intermediate checkpoint (model/ = final stays)
+        import shutil
+        saved = [st for st in val_hist if os.path.isdir(os.path.join(out, f"model_s{st}"))]
+        best = max(saved, key=lambda st: val_hist[st]) if saved else None
+        for d in os.listdir(out):
+            if d.startswith("model_s") and d != f"model_s{best}":
+                shutil.rmtree(os.path.join(out, d), ignore_errors=True)
+        print(f"[ckpt] kept model_s{best} (val {val_hist.get(best)}) + final model/", flush=True)
     print(f"[done] {out}/model", flush=True)
 
 
