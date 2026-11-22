@@ -15,6 +15,10 @@ is `gencad/REPORT.md`. This file is the bridge: what matters, what is in flight,
 feature-edit + quiddity-reward round (`vlm_feat_sft` -> `vlm_grpo_feat`, ~$70 of a $90 budget) gave no test gain
 (best-of-9 71.9 / 71.7, paired +0.05 / -0.14). Details and readings: `gencad/CLAUDE.md`, sections of Nov 17-18.
 Sections below are from Nov 2.
+**Bucket cleanup 2026-11-22** (534 -> 72 GB): deleted 351 GB of stale `.tmp*` files from interrupted saves, the model
+weights of every run except `vlm_grpo_self`, `vlm_grpo_real2`, `vlm_grpo_fullres` and `vlm_cq_v1` (logs, eval
+json, preds and rows kept), and GenCAD's `data/{sketches,images}.tar`. Runs referenced below without a `model/`
+folder can no longer be loaded.
 
 ---
 
