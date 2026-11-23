@@ -58,15 +58,12 @@ def _node(shape):
     n = getattr(shape, "_sc", None)
     if n is not None:
         return n
-    for w, nd in reversed(_REG):              # sub-shapes taken out of a compound, re-wrapped shapes
-        if w.IsSame(shape.wrapped):
-            return nd
-    # a solid inside a traced compound (e.g. .solids() of a multi-solid result)
     from cadquery.occ_impl.shapes import Compound
-    for w, nd in reversed(_REG):
-        for s in Compound(w).Solids() if w.ShapeType() == 0 else []:
-            if s.wrapped.IsSame(shape.wrapped):
-                return Node("part", {"shape": shape}, [nd])
+    for w, nd in reversed(_REG):              # most recent first: re-wrapped shapes, or a solid inside a traced
+        if w.IsSame(shape.wrapped):           # compound (e.g. .solids() of a multi-solid result)
+            return nd
+        if w.ShapeType() == 0 and any(s.wrapped.IsSame(shape.wrapped) for s in Compound(w).Solids()):
+            return Node("part", {"shape": shape}, [nd])
     raise Unsupported(f"untracked shape ({type(shape).__name__})")
 
 
@@ -191,8 +188,14 @@ def install_hooks():
 
     oapply = Shape._apply_transform
 
+    def recorded(r, start):                          # an inner hook already recorded this result
+        return any(w.IsSame(r.wrapped) for w, _ in _REG[start:])
+
     def apply_transform(self, Tr):
+        start = len(_REG)
         r = oapply(self, Tr)
+        if recorded(r, start):
+            return r
         n = getattr(self, "_sc", None)
         if n is None:
             try:
@@ -208,12 +211,16 @@ def install_hooks():
         orig = getattr(Shape, name)
 
         def f(self, *a, **k):
-            r = orig(self, *a, **k)
+            start = len(_REG)
+            t_in = self.wrapped.Location().Transformation()   # before: `move` changes self in place
             try:
                 n = _node(self)
             except Unsupported:
+                n = None
+            r = orig(self, *a, **k)
+            if n is None or recorded(r, start):
                 return r
-            t_in, t_out = self.wrapped.Location().Transformation(), r.wrapped.Location().Transformation()
+            t_out = r.wrapped.Location().Transformation()
             T = gp_Trsf()
             T.Multiply(t_out)
             T.Multiply(t_in.Inverted())
@@ -273,6 +280,28 @@ def _sketch_cmds(face, name):
     return cmds, n
 
 
+def _moved_leaf(kid, m):
+    """A primitive node with a rigid transform applied to its geometry."""
+    from OCP.gp import gp_Trsf
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from cadquery.occ_impl.shapes import Face, Vector
+    T = gp_Trsf()
+    T.SetValues(*[float(v) for row in m for v in row])
+    R = np.array(m)[:, :3]
+    pt = lambda v: Vector(*(R @ np.array(v.toTuple()) + np.array(m)[:, 3]))  # noqa: E731
+    dr = lambda v: Vector(*(R @ np.array(v.toTuple())))                       # noqa: E731
+    a = dict(kid.args)
+    if "face" in a:
+        a["face"] = Face(BRepBuilderAPI_Transform(a["face"].wrapped, T, True).Shape())
+    if kid.op == "extrude":
+        a["vec"] = dr(a["vec"])
+    elif kid.op == "revolve":
+        a["p0"], a["p1"] = pt(a["p0"]), pt(a["p1"])
+    else:
+        a["p"], a["d"] = pt(a["p"]), dr(a["d"])
+    return Node(kid.op, a)
+
+
 def _uniq(xs):
     out = []
     for x in xs:
@@ -283,7 +312,7 @@ def _uniq(xs):
 
 class Emitter:
     def __init__(self):
-        self.cmds, self.k, self.done = [], 0, {}
+        self.cmds, self.k, self.done, self.moved = [], 0, {}, set()
         self.approx = 0
 
     def name(self, p="B"):
@@ -362,10 +391,21 @@ class Emitter:
             self.cmds.append({"command": f"solid.{op}", "params": p})
             out = src
         elif op == "move":
-            src = self.bodies(node.kids[0])
-            self.cmds.append({"command": "solid.move", "params": {
-                "bodies": src, "matrix": [[_f(v) for v in row] for row in a["m"]]}})
-            out = src
+            kid = node.kids[0]
+            if kid.op in ("extrude", "revolve", "cylinder") and kid.id not in self.done:
+                out = self.bodies(_moved_leaf(kid, a["m"]))  # fold the move into the feature: a fresh body
+            else:                                            # per placement (e.g. one cylinder per hole)
+                src = self.bodies(kid)
+                p = {"bodies": src, "matrix": [[round(float(v), 12) for v in row] for row in a["m"]],
+                     "tolerance": 1e-6}
+                if kid.id in self.moved:                     # the same bodies placed again: move a copy
+                    p["copy"] = True
+                    p["body_names"] = [self.name() for _ in src]
+                    out = p["body_names"]
+                else:
+                    out = src
+                self.moved.add(kid.id)
+                self.cmds.append({"command": "solid.move", "params": p})
         else:
             raise Unsupported(op)
         # a node used twice would have its bodies consumed by the first combine: not handled (rare)
@@ -391,6 +431,29 @@ def convert(code):
         em.cmds.append({"command": "solid.combine", "params": {"target": final[0], "tools": final[1:],
                                                                "operation": "join", "touching": "one_body"}})
     return shape, em.cmds, {"n_cmds": len(em.cmds), "approx_splines": em.approx}
+
+
+def _sampled_iou(a, b, n=20000, seed=0):
+    """Volume IoU from random points in the joint bounding box (an OCC boolean of two coincident solids built by
+    different kernels often fails and reports ~0)."""
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
+    from OCP.gp import gp_Pnt
+    bb = Bnd_Box()
+    BRepBndLib.Add_s(a, bb)
+    BRepBndLib.Add_s(b, bb)
+    lo, hi = np.array(bb.CornerMin().Coord()), np.array(bb.CornerMax().Coord())
+    P = np.random.default_rng(seed).uniform(lo, hi, size=(n, 3))
+    ca, cb = BRepClass3d_SolidClassifier(a), BRepClass3d_SolidClassifier(b)
+
+    def inside(c, p):
+        c.Perform(gp_Pnt(*p), 1e-6)
+        return c.State() in (TopAbs_IN, TopAbs_ON)
+    ia = np.array([inside(ca, p) for p in P])
+    ib = np.array([inside(cb, p) for p in P])
+    return float((ia & ib).sum() / max((ia | ib).sum(), 1))
 
 
 def work(args):
@@ -437,9 +500,8 @@ def work(args):
             BRepGProp.VolumeProperties_s(x, g)
             return g.Mass()
         va, vb = vol(shape.wrapped), vol(sc)
-        vi = vol(BRepAlgoAPI_Common(shape.wrapped, sc).Shape())
         rec["sc_volume"], rec["cq_volume"] = vb, va
-        rec["iou"] = float(min(vi / max(va + vb - vi, 1e-12), 1.0)) if vb > 0 else 0.0
+        rec["iou"] = _sampled_iou(shape.wrapped, sc) if vb > 0 else 0.0
         rec["stage"] = "ok"
     except Exception as e:  # noqa: BLE001
         return {**rec, "stage": "compare", "error": f"{type(e).__name__}: {e}"[:200]}
