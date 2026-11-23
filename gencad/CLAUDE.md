@@ -843,6 +843,24 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
   see the detail in the renders (fillets 2-5 % recall: small fillets are barely visible at 448 px per view);
   (3) val on 128 parts swings +-3, so keep every checkpoint and pick by val. Best model stays `vlm_grpo_self`.
 
+### Converting our CadQuery to SolidCraft scripts (`scripts/to_solidcraft.py`; Nov 23)
+- SolidCraft (tangency-labs/solidcraft, MIT/Apache, Rust; kernel = Rust port of SMLib from NVIDIA's usd-brep) runs JSON
+  command scripts headless (`solidcraft-cli run s.json --out p.step`; built locally from source, ~22 min on 4 CPUs).
+- Converter: runs the CadQuery program with hooks on the shape layer and records what each op did in world coordinates
+  (profiles on explicit planes, extrude/revolve as new bodies, booleans as `solid.combine`, fillet/chamfer/shell by a
+  point on each picked edge/face, moves folded into primitives or `solid.move` matrices); selectors never need
+  translating. Checked by sampled-point IoU vs the CadQuery solid (an OCC boolean of two coincident solids from
+  different kernels often fails and reports 0).
+- 600 programs per source, built / identical (IoU >= 0.99) among those CadQuery builds and the converter supports:
+  our model's answers on the real test 562/563, 99.3 %; our verified real-part targets 595/596, 99.7 %; CAD-Recode
+  599/599, 99.7 %; generator programs 360/369 converted-and-built, 91.9 % identical (fillets 186/206, chamfers
+  125/147 identical; failures are chamfer/fillet edge picks SolidCraft can't find after earlier features), but 225 of
+  600 not converted yet (converter gaps: untraced shell/compound ops 122 - all enclosures and U-brackets - cones 54,
+  mirror 33, tapered extrude 16; SolidCraft has all of these). Scripts are 4-8x longer than our CadQuery (JSON).
+- Reading: the geometry carries over almost exactly, so a SolidCraft dataset can be made from ours mechanically; the
+  costs are the converter gaps above and the verbose format (a compact text form of the same commands would be needed
+  for a model to write it). Not tested: whether SolidCraft builds fillets that OCC fails on.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
