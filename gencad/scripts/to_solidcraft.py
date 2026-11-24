@@ -182,7 +182,8 @@ def install_hooks():
         pts = []
         for f in faceList:
             u0, u1, v0, v1 = f._uvBounds()
-            pts.append(tuple(f.positionAt((u0 + u1) / 2, (v0 + v1) / 2, mode="parameter").toTuple()))
+            from OCP.BRepAdaptor import BRepAdaptor_Surface
+            pts.append(tuple(BRepAdaptor_Surface(f.wrapped).Value((u0 + u1) / 2, (v0 + v1) / 2).Coord()))
         return _register(r, Node("shell", {"t": thickness, "pts": pts}, [_node(self)]))
     Mixin3D.fillet, Mixin3D.chamfer, Shape.shell = fillet, chamfer, shell
 
