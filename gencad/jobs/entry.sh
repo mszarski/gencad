@@ -349,6 +349,7 @@ case "$STAGE" in
     need_cq
     need_vllm
     for d in ${DRAW:-draw_val}; do tar -xf "/work/data/$d.tar" -C data; done
+    [[ -d data/cgb_sheets ]] || cp -r /work/data/cgb_sheets data/
     python scripts/eval_drawings.py --model "${INIT:?set INIT=<model dir>}" --drawings data/draw_val --extra data/cgb_sheets \
         --out "results/$RUN/draweval.json" "$@" ;;
 
@@ -356,6 +357,7 @@ case "$STAGE" in
     need_cq
     need_vllm
     for d in ${DRAW:-draw_val}; do tar -xf "/work/data/$d.tar" -C data; done
+    [[ -d data/cgb_sheets ]] || cp -r /work/data/cgb_sheets data/
     python scripts/bon_drawings.py --model "${INIT:?set INIT=<model dir>}" --drawings "data/${DRAWDIR:-draw_val}" \
         --extra data/cgb_sheets --out "results/$RUN/bon.json" "$@" ;;
 
