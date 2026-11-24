@@ -322,6 +322,7 @@ case "$STAGE" in
     pip install -q uv && uv venv -q -p 3.12 /opt/cgb && uv pip install -q --python /opt/cgb/bin/python \
         "https://github.com/huggingface/cadgenbench/archive/refs/heads/main.zip" "build123d>=0.10,<0.13" pebble   # needs python>=3.12
     NW=$(python -c "from mm.sysutil import usable_cpus; print(usable_cpus())")
+    export CADGENBENCH_MESH_TIMEOUT_S=0    # its spawn-pool mesh guard idles to the 180 s timeout per part; we time out per part
     PREDS="$1"; shift
     for m in "$@"; do
       python scripts/cgb_score.py prepare --preds "$PREDS" --method "$m" --work "/tmp/cgb/$m" --workers "$NW"
