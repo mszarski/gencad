@@ -352,6 +352,13 @@ case "$STAGE" in
     python scripts/eval_drawings.py --model "${INIT:?set INIT=<model dir>}" --drawings data/draw_val --extra data/cgb_sheets \
         --out "results/$RUN/draweval.json" "$@" ;;
 
+  drawbon)    # best-of-N on drawings with a consensus picker (scripts/bon_drawings.py); INIT = model; DRAW = tars; DRAWDIR
+    need_cq
+    need_vllm
+    for d in ${DRAW:-draw_val}; do tar -xf "/work/data/$d.tar" -C data; done
+    python scripts/bon_drawings.py --model "${INIT:?set INIT=<model dir>}" --drawings "data/${DRAWDIR:-draw_val}" \
+        --extra data/cgb_sheets --out "results/$RUN/bon.json" "$@" ;;
+
   orient)     # orientation search on saved predictions (scripts/orient_fix.py) + scoring -> results/$RUN/orient*.{pkl,json}
     need_cq     # RICH_TEST=1: rich/real test parts (scored by rich_iou.py); else DeepCAD test (cq_iou.py)
     if [[ "${RICH_TEST:-0}" == "1" ]]; then

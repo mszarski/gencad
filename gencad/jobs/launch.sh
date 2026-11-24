@@ -41,6 +41,7 @@ case "$STAGE" in
   drawgen)      DF=cpu-xl;      DT=8h ;;
   cgbscore)     DF=cpu-xl;      DT=6h ;;
   dimprobe)     DF=a100-large;  DT=2h ;;
+  drawbon)      DF=a100-large;  DT=3h ;;
   featedit)     DF=cpu-xl;      DT=6h ;;
   revise)       DF=a100-large;  DT=3h ;;
   eval)         DF=a10g-large;  DT=4h ;;
@@ -66,7 +67,7 @@ tar -chf - --exclude=./upstream --exclude=.git --exclude=__pycache__ --exclude=.
     --exclude=./data/sketches --exclude=./data/rich --exclude="./data/*.tar" . | tar -xf - -C "$SNAP"   # -h follows the setup.sh symlinks
 
 ENVS=()
-for k in FEAT DRAW LIGHT CGB_SHARD CGB_RAW INIT CHUNKS SPLIT RICH RICH_TEST REV REV_RICH RICH_SHARDS REAL SHARD N_SHARDS VLLM_NIGHTLY TEACHER RAND SELF PRIOR INIT_PRIOR PREDS RUN EPOCHS BS LR STEPS SAVE_EVERY CSR_CKPT CCIP_CKPT DP_CKPT IMG_TYPE OCC HUB_REPO; do
+for k in FEAT DRAW DRAWDIR LIGHT CGB_SHARD CGB_RAW INIT CHUNKS SPLIT RICH RICH_TEST REV REV_RICH RICH_SHARDS REAL SHARD N_SHARDS VLLM_NIGHTLY TEACHER RAND SELF PRIOR INIT_PRIOR PREDS RUN EPOCHS BS LR STEPS SAVE_EVERY CSR_CKPT CCIP_CKPT DP_CKPT IMG_TYPE OCC HUB_REPO; do
   [[ -n "${!k:-}" ]] && ENVS+=(--env "$k=${!k}")
 done
 
