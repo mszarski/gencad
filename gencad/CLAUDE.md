@@ -861,6 +861,36 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
   costs are the converter gaps above and the verbose format (a compact text form of the same commands would be needed
   for a model to write it). Not tested: whether SolidCraft builds fillets that OCC fails on.
 
+### CADGenBench and drawings: phase 0 of `PLAN_drawings.md` (Nov 24)
+- CADGenBench (huggingface/cadgenbench): 49 drawing -> STEP and 32 STEP + text edit tasks on Mecado parts, scored
+  0.4 shape + 0.4 interface + 0.2 topology (rigid alignment, no rescaling: size in mm counts); ground truth private.
+  Leaderboard: HF agent baselines Claude Fable 5 0.45, Opus 4.7 0.37; fine-tuned Qwen3-VL-2B 0.04, 8B 0.09; top
+  commercial agents ~0.87-0.90.
+- Drawings (`scripts/make_drawing.py`): STEP -> SolidCraft (`file.insert_step`, coordinates kept) -> standard views
+  (front/top/right/iso, first or third angle) -> our dimensions from the B-rep via `drawing.dimension.add` by 3D
+  points (overall sizes, one diameter per hole centre + its position from a corner, a few radii) -> PNG (~3100 px).
+  Views are found by projected side, not label (first-angle names differ). Refused dimensions are dropped and retried.
+- Zero-shot dimension reading (`scripts/probe_dims.py`, job `dimprobe`, ~$4; 54 drawings of real parts, 329 known
+  values; recall / precision of distinct numbers): 3100 px 2B 67.5 / 91, 4B 66.3 / 92, 8B 69.3 / 90; 1600 px 63.5 /
+  87, 66.3 / 93, 68.1 / 90. Reading digits is not a size problem; on a real CADGenBench sheet the 2B read the numbers
+  but labelled them all width/height and looped, the 8B described what they measure. Association is the open question.
+- CADGenBench's evaluator on our parts (`scripts/cgb_score.py` + `scripts/interface_regions.py`: keep-out cylinders for
+  holes, keep-in for bosses, from full cylinders of the GT; job `cgbscore`, 4 shards on cpu-xl, ~$12 incl. false
+  starts). 600 real test parts (interface regions on 376), vlm_grpo_self, mean cad_score (valid / shape / interface /
+  topology):
+  | prediction | rescaled to the GT size ("fit") | as written ("raw") |
+  |---|---|---|
+  | one answer | 0.644 (0.92 / 0.66 / 0.61 / 0.85) | 0.221 (150 parts; fit on the same 150: 0.571) |
+  | best-of-9 | **0.683** (0.97 / 0.68 / 0.61 / 0.84) | 0.238 |
+  Paired best-of-9 - one answer (fit): +0.039 +- 0.006 (148 parts better by > 0.05, 46 worse). Reading: absolute size is
+  the whole gap (0.22 -> 0.57 on the same parts); geometry and mating features hold up once sized. Not comparable to
+  the leaderboard (our Fusion 360 parts from renders, our auto regions, GT size given).
+- Gotchas: cadgenbench needs Python >= 3.12 and its own env (`uv venv -p 3.12`); `build123d>=0.13` pulls OCP 8 whose
+  `Bnd_Box.Get()` breaks it, so pin `build123d<0.13` (OCP 7.9); never pip-install it into our env (it replaced OCP and
+  broke CadQuery); needs `libegl1 libgl1 libusb-1.0-0`; its spawn-pool mesh guard idles to a 180 s timeout per part
+  here, so set `CADGENBENCH_MESH_TIMEOUT_S=0` and time out per part ourselves; ~15-20 s per evaluation per CPU, slower
+  under 16-way parallelism (~300 s each on cpu-xl): shard big runs.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped

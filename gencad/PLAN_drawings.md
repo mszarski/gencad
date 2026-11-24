@@ -23,7 +23,11 @@ that beats the frontier-model baselines (HF agent baselines: Claude Fable 5 0.45
   Our programs convert to SolidCraft at ~99.5 % identical geometry (real, self targets, CAD-Recode); generators need
   converter work (cones, mirror, taper, shells).
 
-## Phase 0: metric and harness (local, $0, ~1-2 days)
+## Phase 0: metric and harness: DONE Nov 24 (results in CLAUDE.md "CADGenBench and drawings")
+Our model, CADGenBench score on 600 real parts: 0.22 as written, 0.64 at the true size (best-of-9 0.68); 2B reads
+~68 % of dimensions zero-shot at 91 % precision, like 4B / 8B. Step 4 (their agent harness with our model) not run.
+
+## Phase 0 (original text)
 1. Install cadgenbench; score our 600 real test parts with its shape/topology/validity (absolute mm and scale-fitted,
    to see what absolute size costs us today).
 2. Auto interface regions for our parts: from quiddity features of the GT (holes, slots, pockets -> keep-out
