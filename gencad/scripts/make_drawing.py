@@ -39,7 +39,7 @@ def _run(cli, cmds, tmp, tag, extra=()):
     return o
 
 
-def choose_dims(shape, rng, max_circles=8, max_arcs=3):
+def choose_dims(shape, rng, max_circles=8, max_arcs=3, max_levels=2):
     """-> list of (view label, kind params, record) chosen from the B-rep of a cadquery shape."""
     from OCP.BRepAdaptor import BRepAdaptor_Curve
     from OCP.GeomAbs import GeomAbs_Circle
@@ -59,6 +59,17 @@ def choose_dims(shape, rng, max_circles=8, max_arcs=3):
             out.append((view, {"linear": {"a": corner(axis, 0).tolist(), "b": corner(axis, 1).tolist(),
                                           "direction": d}},
                         {"kind": "overall", "axis": "xyz"[axis], "value": float(hi[axis] - lo[axis])}))
+    for axis, (view, d) in {0: ("Front", "horizontal"), 2: ("Front", "vertical"), 1: ("Right of Front", "horizontal")
+                            }.items():                  # levels: planar faces between min and max, as a baseline
+        levels = sorted({round(float(x), 3) for x in verts[:, axis]} - {round(float(lo[axis]), 3),
+                                                                        round(float(hi[axis]), 3)})
+        levels = [L for L in levels if min(L - lo[axis], hi[axis] - L) > 0.02 * (hi[axis] - lo[axis] + 1e-9)]
+        rng.shuffle(levels)
+        for L in levels[:max_levels]:
+            b = verts[np.isclose(verts[:, axis], L, atol=1e-3)]
+            b = b[np.argmin(np.linalg.norm(b - lo, axis=1))]
+            out.append((view, {"linear": {"a": corner(axis, 0).tolist(), "b": b.tolist(), "direction": d}},
+                        {"kind": "level", "axis": "xyz"[axis], "value": float(L - lo[axis])}))
     circles, arcs, seen = [], [], set()
     for e in shape.Edges():
         ad = BRepAdaptor_Curve(e.wrapped)
@@ -88,6 +99,11 @@ def choose_dims(shape, rng, max_circles=8, max_arcs=3):
             if abs(cen[ax] - a[ax]) > 0.5:
                 out.append((view, {"linear": {"a": a.tolist(), "b": {"centre": list(pt)}, "direction": d}},
                             {"kind": "hole_position", "axis": "xyz"[ax], "value": float(abs(cen[ax] - a[ax]))}))
+    radii = [round(r, 1) for *_, r, _ in arcs]
+    common = max(set(radii), key=radii.count) if radii else None
+    if common is not None and radii.count(common) >= 3 and rng.random() < 0.7:
+        out.append(("NOTE", f"ALL RADII {common:g} UNLESS OTHERWISE MARKED", {"kind": "note_radius", "value": common}))
+        arcs = [a for a in arcs if round(a[3], 1) != common]
     for view, k, cen, r, pt in arcs[:max_arcs]:
         out.append((view, {"radial": {"edge": list(pt)}}, {"kind": "radius", "value": r}))
     return out
@@ -110,9 +126,13 @@ def make(args):
     dims = choose_dims(shape, rng)
     with tempfile.TemporaryDirectory() as tmp:
         sc = os.path.join(tmp, "d.sc")
+        paper = rng.choices(["a3", "a2", "a4"], weights=[0.5, 0.35, 0.15])[0]
+        width_mm = {"a2": 594, "a3": 420, "a4": 297}[paper]
+        dpi = dpi or int(round(2400 / (width_mm / 25.4)))            # ~2400 px wide whatever the sheet
         o = _run(cli, [{"command": "file.insert_step", "params": {"path": os.path.abspath(step)}},
-                       {"command": "drawing.create", "params": {"standard_views": True, "units": "mm",
-                                                                "projection": rng.choice(["first", "third"])}}],
+                       {"command": "drawing.create", "params": {
+                           "standard_views": True, "units": "mm", "projection": rng.choice(["first", "third"]),
+                           "first_sheet_paper": {"size": {"standard": paper}, "orientation": "landscape"}}}],
                  tmp, "p1", ("--save", sc))
         if isinstance(o, dict):
             return {"name": name, "error": str(o.get("error"))[:200]}
@@ -126,12 +146,16 @@ def make(args):
                 vid["Above Front"] = v["id"]
             elif v.get("side") in ("left", "right"):
                 vid["Right of Front"] = v["id"]
+        notes = [d for d in dims if d[0] == "NOTE"]
         keep = [d for d in dims if d[0] in vid]
         png = os.path.abspath(os.path.join(out_dir, f"{name}.png"))
         for _ in range(12):                          # drop refused dimensions one at a time
             cmds = [{"command": "drawing.open", "params": {"drawing": dr["id"]}}]
             cmds += [{"command": "drawing.dimension.add", "params": {"view": vid[v], "kind": kind, "decimals": 1}}
                      for v, kind, _ in keep]
+            cmds += [{"command": "drawing.note.add", "params": {
+                "anchor": {"sheet": sheet["name"]}, "content": txt, "at": [25, 45 + 8 * j], "cap_mm": 3.5}}
+                for j, (_, txt, _) in enumerate(notes)]
             cmds += [{"command": "drawing.export", "params": {"format": "png", "path": png, "dpi": dpi,
                                                               "sheet": sheet["name"]}}]
             o = _run(cli, cmds, tmp, "p2", ("--in", sc))
@@ -143,7 +167,8 @@ def make(args):
             keep.pop(st - 2)
         else:
             return {"name": name, "error": "too many refused dimensions"}
-    return {"name": name, "dims": [{**rec, "view": v} for v, _, rec in keep], "n_tried": len(dims)}
+    return {"name": name, "dims": [{**rec, "view": v} for v, _, rec in keep + notes], "n_tried": len(dims),
+            "paper": paper}
 
 
 def main():
@@ -152,7 +177,7 @@ def main():
     ap.add_argument("--codes_parquet", default=None, help="or: parquet with uid, code (CadQuery programs)")
     ap.add_argument("--cli", required=True)
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--dpi", type=int, default=188, help="A3 sheet: 188 dpi ~ 3100 px wide")
+    ap.add_argument("--dpi", type=int, default=0, help="0: per sheet size, ~2400 px wide")
     ap.add_argument("--workers", type=int, default=usable_cpus())
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", required=True)

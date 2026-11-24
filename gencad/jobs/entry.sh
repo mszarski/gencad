@@ -336,7 +336,13 @@ case "$STAGE" in
     apt-get update -qq && apt-get install -y -qq libgl1 libglu1-mesa libxrender1 libxext6 >/dev/null; pip install -q cadquery
     cp /work/tools/solidcraft-cli /usr/local/bin/ && chmod +x /usr/local/bin/solidcraft-cli
     CODES="$1"; shift
-    python scripts/make_drawing.py --codes_parquet "$CODES" --cli /usr/local/bin/solidcraft-cli --out "data/$RUN" --dpi 125 "$@"
+    if [[ "$CODES" == "REAL" ]]; then   # our verified real-part programs at varied sizes (scripts/scale_program.py)
+      tar -xf /work/data/self_real.tar -C data
+      CODES=data/real_scaled.parquet
+      python scripts/scale_program.py --targets data/self_real/targets.parquet --out "$CODES"
+      cp "$CODES" "/work/data/${RUN}_codes.parquet"
+    fi
+    python scripts/make_drawing.py --codes_parquet "$CODES" --cli /usr/local/bin/solidcraft-cli --out "data/$RUN" "$@"
     tar -cf "/work/data/$RUN.tar" -C data "$RUN" && echo "[drawgen] wrote /work/data/$RUN.tar" ;;
 
   draweval)   # drawings -> CadQuery in mm (scripts/eval_drawings.py); INIT = model dir; DRAW = drawing tars to unpack
