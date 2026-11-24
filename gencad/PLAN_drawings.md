@@ -37,7 +37,11 @@ Our model, CADGenBench score on 600 real parts: 0.22 as written, 0.64 at the tru
 4. Run their baseline agent harness locally with our model behind an OpenAI-compatible vLLM endpoint (CadQuery
    backend), on the public inputs, to get a first honest number for "our model, their agent" (no submission yet).
 
-## Phase 1: drawing data (CPU jobs, ~$10-25)
+## Phase 1 + phase 2 pilot: DONE Nov 24 (CLAUDE.md "Drawing -> CadQuery pilot")
+28.6k drawings; pilot SFT 1k steps: abs IoU on held-out drawings 0.6 -> 54.8, size error 52 % -> 4.8 %, valid 95 %.
+Cost ~$30 (data ~$4, SFT ~$22, evals ~$3).
+
+## Phase 1 (original text): drawing data (CPU jobs, ~$10-25)
 1. Close the converter gaps (cones, mirror, taper, shells) so generator families convert.
 2. Dimensioning pass (`scripts/make_drawing.py`): per part, SolidCraft views (front/top/right + iso, sometimes a
    section or detail view), then dimensions we choose from traced geometry: overall sizes, hole diameters and

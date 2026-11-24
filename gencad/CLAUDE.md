@@ -891,6 +891,32 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
   here, so set `CADGENBENCH_MESH_TIMEOUT_S=0` and time out per part ourselves; ~15-20 s per evaluation per CPU, slower
   under 16-way parallelism (~300 s each on cpu-xl): shard big runs.
 
+### Drawing -> CadQuery pilot (`vlm_draw_pilot`; phases 1-2 pilot of `PLAN_drawings.md`, Nov 24)
+- Data (job `drawgen`, cpu-xl on `IMAGE=python:3.12-trixie LIGHT=1`: the prebuilt `solidcraft-cli` in the bucket at
+  `tools/solidcraft-cli` needs glibc 2.39; ~3 min per 600 drawings): `scripts/make_drawing.py --codes_parquet` on 20k
+  CAD-Recode train programs and 10k generator programs (shard train_0, 19 families) -> `/work/data/draw_{recode_a,
+  recode_b,gen_train}.tar` (9,760 + 9,757 + 9,047 drawings; median 6 / 6 / 14 dimensions; ~2070 px PNG at 125 dpi);
+  held-out `draw_val` = 300 CAD-Recode val + 300 generated test_0 programs -> 548 drawings. Failures are mostly
+  SolidCraft export "collapsed curve" on tiny edges (skipped).
+- Training: `train_vlm_cq.py --drawings ... --drawing_p 0.7 --drawing_side 2048` (drawings are fed at <= 2048 px,
+  ~2,900 image tokens; `set_pixel_range` raises the processor's budget, which would otherwise shrink them to ~1056 px),
+  from `vlm_grpo_self`, 1000 steps, bs 4 x accum 8, lr 1e-5, rest of the mix = the usual DeepCAD/CAD-Recode renders.
+  ~15 s/step on an H200 (4.2 h, ~$22). Loss 0.48 (s50) -> 0.22 (s1000). DeepCAD val after: view4 91.6, view1 86.6
+  (render skills kept).
+- Eval (`scripts/eval_drawings.py`, job `draweval`; abs IoU = both solids centred, no rescaling; size err = mean
+  relative error of the sorted bbox extents), 548 held-out drawings:
+  | | vlm_grpo_self (no drawing training) | vlm_draw_pilot |
+  |---|---|---|
+  | valid | 80.7 | **95.4** |
+  | abs IoU (CAD-Recode / generated) | 0.6 (0.6 / 0.5) | **54.8 (67.0 / 41.4)** |
+  | own IoU | 0.7 | 65.7 |
+  | median size error | 0.52 | **0.048** |
+  | public CADGenBench sheets that build | 0 / 6 | 2 / 6 |
+  Size ratio pred / GT (sorted extents): CAD-Recode median 0.99-1.00, 10-90 % 0.98-1.00; generated median 1.00 but
+  0.76-1.55 (structure right, some dimensions misread on busy sheets). Gallery: bucket `results/draweval_pilot/gallery.png`.
+- Reading: a 2B learns drawing -> CAD in millimetres from 28k synthetic drawings in 1k steps. Weak spots: busy
+  generator drawings (more dims, more features), and real CADGenBench sheets (A2, notes, detail views, sheet metal).
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
