@@ -86,6 +86,7 @@ def evaluate(a):
     with cf.ProcessPoolExecutor(max_workers=a.workers or 4) as ex:
         for var, name, r in ex.map(_eval_one, jobs):
             res[var][name] = r
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     json.dump(res, open(a.out, "w"))
     import numpy as np
     for var in ("raw", "fit"):

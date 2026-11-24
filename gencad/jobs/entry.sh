@@ -315,6 +315,19 @@ case "$STAGE" in
     python scripts/render_variants.py --src data/rich/real_train --out data/rich/real_rand --shards "${SHARD:-0}" "$@"
     (cd data/rich && tar -cf "/work/data/rich/real_rand_${SHARD:-0}.tar" real_rand/*/"${SHARD:-0}") && ls -la "/work/data/rich/real_rand_${SHARD:-0}.tar" ;;
 
+  cgbscore)   # CADGenBench evaluator on rich/real predictions (scripts/cgb_score.py); args: <preds.pkl> <method>...
+    need_cq     # RICH_TEST=1 unpacks the real test parts; CADGenBench runs in its own venv (OCP 7.9 build123d)
+    if [[ "${RICH_TEST:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/test*.tar; do tar -xf "$t" -C data/rich; done; fi
+    apt-get update -qq && apt-get install -y -qq libegl1 libgl1 libgl1-mesa-dri libosmesa6 >/dev/null
+    python -m venv /opt/cgb && /opt/cgb/bin/pip install -q \
+        "https://github.com/huggingface/cadgenbench/archive/refs/heads/main.zip" "build123d>=0.10,<0.13"
+    NW=$(python -c "from mm.sysutil import usable_cpus; print(usable_cpus())")
+    PREDS="$1"; shift
+    for m in "$@"; do
+      python scripts/cgb_score.py prepare --preds "$PREDS" --method "$m" --work "/tmp/cgb/$m" --workers "$NW"
+      /opt/cgb/bin/python scripts/cgb_score.py evaluate --work "/tmp/cgb/$m" --out "results/$RUN/scores_$m.json" --workers "$NW"
+    done ;;
+
   orient)     # orientation search on saved predictions (scripts/orient_fix.py) + scoring -> results/$RUN/orient*.{pkl,json}
     need_cq     # RICH_TEST=1: rich/real test parts (scored by rich_iou.py); else DeepCAD test (cq_iou.py)
     if [[ "${RICH_TEST:-0}" == "1" ]]; then

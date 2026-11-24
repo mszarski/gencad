@@ -37,6 +37,7 @@ case "$STAGE" in
   selfsample)   DF=a100-large;  DT=4h ;;
   mistral)      DF=h200x8;      DT=3h ;;
   richiou)      DF=cpu-xl;      DT=4h ;;
+  cgbscore)     DF=cpu-xl;      DT=6h ;;
   dimprobe)     DF=a100-large;  DT=2h ;;
   featedit)     DF=cpu-xl;      DT=6h ;;
   revise)       DF=a100-large;  DT=3h ;;
