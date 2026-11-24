@@ -25,7 +25,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
-from mm.vlm_cad import VLMCad, compose_views, revision_text, save_config
+from mm.vlm_cad import DRAWING_PROMPT, VLMCad, compose_views, load_drawing, revision_text, save_config
 from train_vlm_cad import Collate, load_views
 
 IMAGE_MODES = ("view1", "view4")
@@ -50,6 +50,8 @@ class Samples(Dataset):
             if rev["attempt_stem"]:
                 image = [image, compose_views([load_views("", rev["attempt_stem"], [v])[0] for v in views])]
             return image, revision_text(prompt, rev["attempt"], rev["error"], rev.get("features")), code
+        if len(self.items[i]) > 3 and isinstance(self.items[i][3], dict):   # engineering drawing -> program in mm
+            return load_drawing(self.items[i][3]["drawing"], self.items[i][3]["side"]), DRAWING_PROMPT, code
         if len(self.items[i]) > 3:
             views, prompt = self.items[i][3]
             return compose_views([load_views("", stem, [v])[0] for v in views]), prompt, code
@@ -166,6 +168,10 @@ def main():
     ap.add_argument("--teacher", default=None, help="teacher targets on real parts (scripts/build_teacher.py "
                     "teacher.parquet: stem, code); images only, like --rich")
     ap.add_argument("--teacher_p", type=float, default=0.2, help="share of samples drawn from --teacher")
+    ap.add_argument("--drawings", nargs="*", default=[], help="dirs from scripts/make_drawing.py (drawings.parquet + "
+                    "PNGs): engineering drawing -> the program that built it")
+    ap.add_argument("--drawing_p", type=float, default=0.0, help="share of samples drawn from --drawings")
+    ap.add_argument("--drawing_side", type=int, default=2048, help="longest side of drawing inputs in px")
     ap.add_argument("--rft", default=None, help="rejection-sampling targets (scripts/build_rft.py parquet)")
     ap.add_argument("--rft_p", type=float, default=0.5, help="share of samples drawn from --rft (rest as before)")
     ap.add_argument("--levels", nargs="*", default=["abstract", "beginner", "intermediate", "expert", "description"])
@@ -258,6 +264,13 @@ def main():
         tp = tp[tp.code.str.len() <= a.rich_max_chars]
         items_teacher = [(st, c, None) for st, c in zip(tp.stem, tp.code)]
         print(f"[data] teacher targets {len(items_teacher)} from {a.teacher}, share {a.teacher_p}", flush=True)
+    items_draw = []
+    for d in a.drawings:
+        dp = pd.read_parquet(os.path.join(d, "drawings.parquet"))
+        dp = dp[dp.code.str.len() <= a.rich_max_chars]
+        items_draw += [(None, c, None, {"drawing": os.path.join(d, f), "side": a.drawing_side}) for c, f in zip(dp.code, dp.png)]
+    if items_draw:
+        print(f"[data] drawings {len(items_draw)} from {a.drawings}, share {a.drawing_p}", flush=True)
     items_rev, w_rev = [], []
     if a.revision:
         rv = pd.concat([pd.read_parquet(os.path.join(d, "revision.parquet")).assign(root=d) for d in a.revision],
@@ -290,14 +303,16 @@ def main():
     p_rich = a.rich_p if items_rich else 0.0
     p_teacher = a.teacher_p if items_teacher else 0.0
     p_rev = a.revision_p if items_rev else 0.0
-    rest = 1 - p_rft - p_rich - p_teacher - p_rev
-    items = items_dc + items_rc + items_rft + items_rich + items_teacher + items_rev
+    p_draw = a.drawing_p if items_draw else 0.0
+    rest = 1 - p_rft - p_rich - p_teacher - p_rev - p_draw
+    items = items_dc + items_rc + items_rft + items_rich + items_teacher + items_rev + items_draw
     w = np.concatenate([np.full(len(items_dc), rest * a.deepcad_p / max(len(items_dc), 1)),
                         np.full(len(items_rc), rest * (1 - a.deepcad_p) / max(len(items_rc), 1)),
                         np.full(len(items_rft), p_rft / max(len(items_rft), 1)),
                         np.full(len(items_rich), p_rich / max(len(items_rich), 1)),
                         np.full(len(items_teacher), p_teacher / max(len(items_teacher), 1)),
-                        p_rev * np.asarray(w_rev, float)])
+                        p_rev * np.asarray(w_rev, float),
+                        np.full(len(items_draw), p_draw / max(len(items_draw), 1))])
     if items_rft:
         print(f"[data] rft targets {len(items_rft)} from {a.rft}, share {p_rft}", flush=True)
     print(f"[data] deepcad train {len(items_dc)} (of {len(dc[dc.split == 'train'])} faithful), cad-recode "
@@ -309,6 +324,8 @@ def main():
     vlm = VLMCad.from_pretrained(a.model, dtype=torch.float32)
     if a.grid_side:
         vlm.set_grid_side(a.grid_side)
+    if items_draw:
+        vlm.set_drawing_side(a.drawing_side)
     print(f"[data] view grid {__import__('mm.vlm_cad', fromlist=['GRID_SIDE']).GRID_SIDE} px", flush=True)
     vlm.model.to(a.device)
     vlm.model.config.use_cache = False

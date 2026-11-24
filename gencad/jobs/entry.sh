@@ -143,6 +143,7 @@ case "$STAGE" in
     if [[ "${TEACHER:-0}" == "1" ]]; then tar -xf /work/data/claude_teacher.tar -C data; fi   # scripts/build_teacher.py
     if [[ "${SELF:-0}" == "1" ]]; then tar -xf /work/data/self_real.tar -C data; fi           # scripts/build_self_targets.py
     if [[ "${FEAT:-0}" == "1" ]]; then tar -xf /work/data/feat_edits.tar -C data; fi          # scripts/build_feature_edits.py
+    for d in ${DRAW:-}; do tar -xf "/work/data/$d.tar" -C data; done                            # scripts/make_drawing.py
     pip install -q -U "brotli>=1.2"   # the image's brotli breaks Hub downloads of base models (httpx2 decoder kwargs)
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True   # long multi-image batches fragment memory (4B OOM)
     if [[ "${RAND:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_rand_*.tar; do tar -xf "$t" -C data/rich; done; fi
@@ -337,6 +338,13 @@ case "$STAGE" in
     CODES="$1"; shift
     python scripts/make_drawing.py --codes_parquet "$CODES" --cli /usr/local/bin/solidcraft-cli --out "data/$RUN" --dpi 125 "$@"
     tar -cf "/work/data/$RUN.tar" -C data "$RUN" && echo "[drawgen] wrote /work/data/$RUN.tar" ;;
+
+  draweval)   # drawings -> CadQuery in mm (scripts/eval_drawings.py); INIT = model dir; DRAW = drawing tars to unpack
+    need_cq
+    need_vllm
+    for d in ${DRAW:-draw_val}; do tar -xf "/work/data/$d.tar" -C data; done
+    python scripts/eval_drawings.py --model "${INIT:?set INIT=<model dir>}" --drawings data/draw_val --extra data/cgb_sheets \
+        --out "results/$RUN/draweval.json" "$@" ;;
 
   orient)     # orientation search on saved predictions (scripts/orient_fix.py) + scoring -> results/$RUN/orient*.{pkl,json}
     need_cq     # RICH_TEST=1: rich/real test parts (scored by rich_iou.py); else DeepCAD test (cq_iou.py)

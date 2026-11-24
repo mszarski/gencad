@@ -30,19 +30,27 @@ SIDE = 448                                                           # model inp
 INSTRUCTION = "Write the CAD program for this part."
 CFG_FILE = "gencad_vlm.json"          # per-model input settings, saved next to the weights
 GRID_SIDE = SIDE                      # side of the 2-4 view grid; 2 * SIDE keeps every view at full resolution
+DRAWING_SIDE = 0                      # longest side of an engineering-drawing input (0 = no drawings); its pixel budget
+DRAWING_PROMPT = ("Write the CadQuery program for the part in this engineering drawing, with its real dimensions in "
+                  "millimetres.")
 
 
-def configure(path=None, grid_side=None):
-    """Set the multi-view grid side: explicitly, or from <path>/gencad_vlm.json (absent = SIDE, the original
-    layout). Every loader (HF or vLLM) calls this so a model is always fed the layout it was trained on."""
-    global GRID_SIDE
-    if grid_side is None and path is not None:
+def configure(path=None, grid_side=None, drawing_side=None):
+    """Set the multi-view grid side (and the drawing side): explicitly, or from <path>/gencad_vlm.json (absent =
+    SIDE, the original layout). Every loader (HF or vLLM) calls this so a model is always fed the layout it was
+    trained on."""
+    global GRID_SIDE, DRAWING_SIDE
+    if path is not None and (grid_side is None or drawing_side is None):
         import json
         import os
         f = os.path.join(path, CFG_FILE)
-        grid_side = json.load(open(f)).get("grid_side", SIDE) if os.path.exists(f) else SIDE
+        cfg = json.load(open(f)) if os.path.exists(f) else {}
+        grid_side = cfg.get("grid_side", SIDE) if grid_side is None else grid_side
+        drawing_side = cfg.get("drawing_side", 0) if drawing_side is None else drawing_side
     if grid_side is not None:
         GRID_SIDE = int(grid_side)
+    if drawing_side is not None:
+        DRAWING_SIDE = int(drawing_side)
     return GRID_SIDE
 
 
@@ -50,7 +58,7 @@ def save_config(path):
     import json
     import os
     with open(os.path.join(path, CFG_FILE), "w") as f:
-        json.dump({"grid_side": GRID_SIDE}, f)
+        json.dump({"grid_side": GRID_SIDE, "drawing_side": DRAWING_SIDE}, f)
 
 
 def program_to_text(vec) -> str:
@@ -152,7 +160,8 @@ def encode_batch(processor, images, prompts, targets=None):
 
 def set_pixel_range(processor):
     """Images are fed at their own size: 448 px single views (196 visual tokens) and GRID_SIDE grids."""
-    processor.image_processor.size = {"shortest_edge": SIDE * SIDE, "longest_edge": max(SIDE, GRID_SIDE) ** 2}
+    big = max(max(SIDE, GRID_SIDE) ** 2, int(DRAWING_SIDE * DRAWING_SIDE * 0.72))   # A-sheets are ~1.41 : 1
+    processor.image_processor.size = {"shortest_edge": SIDE * SIDE, "longest_edge": big}
 
 
 class VLMCad:
@@ -174,6 +183,10 @@ class VLMCad:
 
     def set_grid_side(self, grid_side):
         configure(grid_side=grid_side)
+        set_pixel_range(self.processor)
+
+    def set_drawing_side(self, drawing_side):
+        configure(drawing_side=drawing_side)
         set_pixel_range(self.processor)
 
     def save(self, path):
@@ -200,3 +213,13 @@ class VLMCad:
         out = self.model.generate(**enc, max_new_tokens=max_new_tokens, pad_token_id=self.tok.pad_token_id, **kw)
         texts = self.tok.batch_decode(out[:, enc["input_ids"].shape[1]:], skip_special_tokens=True)
         return [text_to_program(t) for t in texts], texts
+
+
+def load_drawing(path, side=None):
+    """An engineering-drawing sheet, longest side scaled down to `side` (default: the configured DRAWING_SIDE)."""
+    im = Image.open(path).convert("RGB")
+    side = side or DRAWING_SIDE or max(im.size)
+    k = side / max(im.size)
+    if k < 1:
+        im = im.resize((round(im.width * k), round(im.height * k)), Image.LANCZOS)
+    return im
