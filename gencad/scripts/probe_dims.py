@@ -58,11 +58,12 @@ def main():
     extra = [(os.path.splitext(f)[0], os.path.join(a.extra, f), None) for f in sorted(os.listdir(a.extra))] \
         if a.extra else []
     res = {}
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     for m in a.models:
         big = max(a.sides)
         llm = LLM(model=m, max_model_len=12288, limit_mm_per_prompt={"image": 1}, gpu_memory_utilization=0.85,
                   mm_processor_kwargs={"max_pixels": big * big}, trust_remote_code=True)
-        sp = SamplingParams(temperature=0.0, max_tokens=a.max_tokens)
+        sp = SamplingParams(temperature=0.0, max_tokens=a.max_tokens, repetition_penalty=1.05)
         proc = AutoProcessor.from_pretrained(m)
         text = proc.apply_chat_template([{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": PROMPT}]}],
                                         tokenize=False, add_generation_prompt=True)
@@ -83,7 +84,7 @@ def main():
                 per[name] = txt
                 if true is None:
                     continue
-                h, t, p = score(numbers(txt), true)
+                h, t, p = score(sorted(set(numbers(txt))), true)   # each distinct number once: no credit for spraying
                 hits, tot, npred = hits + h, tot + t, npred + p
             r = {"recall": round(hits / max(tot, 1), 3), "precision": round(hits / max(npred, 1), 3),
                  "n_true": tot, "n_pred": npred, "answers": per}
