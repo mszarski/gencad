@@ -21,7 +21,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 # that read the host CPU count (OpenBLAS: 128 threads per worker) exhausted the job's thread limit
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 RAYON_NUM_THREADS=1
 cp -r /code /app && cd /app
-pip install -q -r jobs/requirements-job.txt
+if [[ "${LIGHT:-0}" == "1" ]]; then pip install -q pandas pyarrow numpy pebble; else pip install -q -r jobs/requirements-job.txt; fi
 if [[ "${OCC:-0}" == "1" ]]; then conda install -y -q -c conda-forge pythonocc-core=7.9.0; fi
 mkdir -p /work/data /work/ckpt /work/emb /work/results
 rm -rf results && ln -s /work/results results
@@ -329,6 +329,14 @@ case "$STAGE" in
       /opt/cgb/bin/python scripts/cgb_score.py evaluate --work "/tmp/cgb/$m" --out "results/$RUN/scores_$m.json" --workers "$NW" \
           --shard "${CGB_SHARD:-0/1}" ${CGB_RAW:+--raw_limit $CGB_RAW}
     done ;;
+
+  drawgen)    # dimensioned drawings of CadQuery programs with SolidCraft (scripts/make_drawing.py) -> /work/data/<RUN>.tar
+    # needs glibc >= 2.39 for the prebuilt CLI: launch with IMAGE=python:3.12-trixie LIGHT=1; args: <codes parquet> [--limit N]
+    apt-get update -qq && apt-get install -y -qq libgl1 libglu1-mesa libxrender1 libxext6 >/dev/null; pip install -q cadquery
+    cp /work/tools/solidcraft-cli /usr/local/bin/ && chmod +x /usr/local/bin/solidcraft-cli
+    CODES="$1"; shift
+    python scripts/make_drawing.py --codes_parquet "$CODES" --cli /usr/local/bin/solidcraft-cli --out "data/$RUN" --dpi 125 "$@"
+    tar -cf "/work/data/$RUN.tar" -C data "$RUN" && echo "[drawgen] wrote /work/data/$RUN.tar" ;;
 
   orient)     # orientation search on saved predictions (scripts/orient_fix.py) + scoring -> results/$RUN/orient*.{pkl,json}
     need_cq     # RICH_TEST=1: rich/real test parts (scored by rich_iou.py); else DeepCAD test (cq_iou.py)

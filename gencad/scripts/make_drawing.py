@@ -94,10 +94,19 @@ def choose_dims(shape, rng, max_circles=8, max_arcs=3):
 
 
 def make(args):
-    step, name, cli, out_dir, seed, dpi = args
+    src, name, cli, out_dir, seed, dpi = args
     import cadquery as cq
     rng = random.Random(seed)
-    shape = cq.importers.importStep(step).val()
+    if src.lower().endswith((".step", ".stp")):
+        step = src
+        shape = cq.importers.importStep(step).val()
+    else:                                             # CadQuery source: build it and write a STEP to draw from
+        from mm.cadquery_io import run_cadquery
+        shape = run_cadquery(src)
+        if shape is None:
+            return {"name": name, "error": "program does not build"}
+        step = os.path.join(tempfile.gettempdir(), f"md_{os.getpid()}_{name}.step")
+        cq.exporters.export(cq.Workplane().add(shape), step)
     dims = choose_dims(shape, rng)
     with tempfile.TemporaryDirectory() as tmp:
         sc = os.path.join(tmp, "d.sc")
@@ -139,7 +148,8 @@ def make(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--steps", required=True, help="folder of STEP files")
+    ap.add_argument("--steps", default=None, help="folder of STEP files")
+    ap.add_argument("--codes_parquet", default=None, help="or: parquet with uid, code (CadQuery programs)")
     ap.add_argument("--cli", required=True)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dpi", type=int, default=188, help="A3 sheet: 188 dpi ~ 3100 px wide")
@@ -149,13 +159,21 @@ def main():
     a = ap.parse_args()
     from pebble import ProcessPool
     os.makedirs(a.out, exist_ok=True)
-    files = sorted(f for f in os.listdir(a.steps) if f.lower().endswith((".step", ".stp")))
-    random.Random(a.seed).shuffle(files)
-    files = files[:a.limit]
+    codes = {}
+    if a.codes_parquet:
+        import pandas as pd
+        T = pd.read_parquet(a.codes_parquet)
+        T = T.sample(frac=1.0, random_state=a.seed).head(a.limit) if a.limit else T
+        items = [(str(u).replace("/", "_"), c) for u, c in zip(T.uid, T.code)]
+        codes = dict(items)
+    else:
+        files = sorted(f for f in os.listdir(a.steps) if f.lower().endswith((".step", ".stp")))
+        random.Random(a.seed).shuffle(files)
+        items = [(os.path.splitext(f)[0], os.path.join(a.steps, f)) for f in files[:a.limit]]
     res = {}
-    with ProcessPool(max_workers=a.workers) as pool:
-        futs = [(f, pool.schedule(make, args=((os.path.join(a.steps, f), os.path.splitext(f)[0], a.cli, a.out,
-                                                a.seed + i, a.dpi),), timeout=900)) for i, f in enumerate(files)]
+    with ProcessPool(max_workers=a.workers, max_tasks=100) as pool:
+        futs = [(n, pool.schedule(make, args=((src, n, a.cli, a.out, a.seed + i, a.dpi),), timeout=600))
+                for i, (n, src) in enumerate(items)]
         for f, fu in futs:
             try:
                 r = fu.result()
@@ -164,6 +182,10 @@ def main():
             res[r["name"]] = r
     ok = {k: v["dims"] for k, v in res.items() if "dims" in v}
     json.dump(ok, open(os.path.join(a.out, "dims.json"), "w"), indent=0)
+    if codes:                                         # training rows: drawing -> the program that built it
+        import pandas as pd
+        pd.DataFrame([{"uid": k, "code": codes[k], "png": f"{k}.png", "dims": json.dumps(v)} for k, v in ok.items()]
+                     ).to_parquet(os.path.join(a.out, "drawings.parquet"))
     n = [len(v) for v in ok.values()]
     print(f"[draw] {len(ok)}/{len(res)} drawings, dims per drawing median {np.median(n) if n else 0}; errors: "
           f"{[v['error'][:80] for v in res.values() if 'error' in v][:5]}", flush=True)
