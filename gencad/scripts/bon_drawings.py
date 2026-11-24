@@ -96,6 +96,7 @@ def main():
     greedy = llm.generate(reqs, SamplingParams(temperature=0.0, max_tokens=a.max_new_tokens), use_tqdm=False)
     samp = llm.generate(reqs, SamplingParams(temperature=a.temperature, n=a.n - 1, max_tokens=a.max_new_tokens),
                         use_tqdm=False)
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     cands = [[g.outputs[0].text.strip()] + [o.text.strip() for o in s.outputs] for g, s in zip(greedy, samp)]
     pickle.dump({"items": [(u, p) for u, p, _ in items], "cands": cands},
                 open(os.path.splitext(a.out)[0] + "_cands.pkl", "wb"))
@@ -128,7 +129,6 @@ def main():
     if X:
         summ["extra_valid_greedy_pick"] = [sum(bool(r and r["valid"][0]) for r in X.values()),
                                            sum(bool(r and r["valid"][r["pick"]]) for r in X.values()), len(X)]
-    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     json.dump({"summary": summ, "rows": res}, open(a.out, "w"))
     print(f"[bon] {a.model}: {json.dumps(summ)}", flush=True)
 
