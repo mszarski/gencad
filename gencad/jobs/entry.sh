@@ -284,6 +284,10 @@ case "$STAGE" in
     export HF_XET_HIGH_PERFORMANCE=1
     python scripts/mistral_real.py --model "${INIT:?set INIT=<hf model id>}" --out "results/$RUN/preds.pkl" "$@" ;;
 
+  dimprobe)   # zero-shot dimension-reading probe of base VLMs on drawings (scripts/probe_dims.py)
+    need_vllm
+    python scripts/probe_dims.py --data data/dimprobe --extra data/cgb_sheets --out "results/$RUN/probe.json" "$@" ;;
+
   richiou)    # score a rich/real preds file (scripts/rich_iou.py) -> results/$RUN/rich_{iou.json,rows.pkl}
     need_cq     # REAL=1 unpacks the real training parts (GT STEP files), RICH_TEST=1 the test shards
     if [[ "${REAL:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/real_train_*.tar; do tar -xf "$t" -C data/rich; done; fi
