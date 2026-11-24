@@ -82,7 +82,9 @@ def evaluate(a):
     import time
     from pebble import ProcessPool
     names = sorted(os.listdir(os.path.join(a.work, "gt")))[:a.limit]
-    jobs = [(a.work, var, n) for var in ("raw", "fit") for n in names]
+    k, n_sh = (int(x) for x in a.shard.split("/"))
+    names = names[k::n_sh]
+    jobs = [(a.work, "fit", n) for n in names] + [(a.work, "raw", n) for n in names[:a.raw_limit]]
     res = {"raw": {}, "fit": {}}
     t0 = time.time()
     with ProcessPool(max_workers=a.workers or 4, max_tasks=20) as pool:
@@ -114,6 +116,8 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--timeout", type=float, default=600)
+    ap.add_argument("--shard", default="0/1", help="k/n: evaluate every n-th part from the k-th")
+    ap.add_argument("--raw_limit", type=int, default=None, help="score the unscaled (raw) variant on this many parts only")
     a = ap.parse_args()
     prepare(a) if a.cmd == "prepare" else evaluate(a)
 

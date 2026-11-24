@@ -326,7 +326,8 @@ case "$STAGE" in
     PREDS="$1"; shift
     for m in "$@"; do
       python scripts/cgb_score.py prepare --preds "$PREDS" --method "$m" --work "/tmp/cgb/$m" --workers "$NW"
-      /opt/cgb/bin/python scripts/cgb_score.py evaluate --work "/tmp/cgb/$m" --out "results/$RUN/scores_$m.json" --workers "$NW"
+      /opt/cgb/bin/python scripts/cgb_score.py evaluate --work "/tmp/cgb/$m" --out "results/$RUN/scores_$m.json" --workers "$NW" \
+          --shard "${CGB_SHARD:-0/1}" ${CGB_RAW:+--raw_limit $CGB_RAW}
     done ;;
 
   orient)     # orientation search on saved predictions (scripts/orient_fix.py) + scoring -> results/$RUN/orient*.{pkl,json}
