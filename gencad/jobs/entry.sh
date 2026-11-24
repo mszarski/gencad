@@ -350,7 +350,7 @@ case "$STAGE" in
     need_vllm
     for d in ${DRAW:-draw_val}; do tar -xf "/work/data/$d.tar" -C data; done
     [[ -d data/cgb_sheets ]] || cp -r /work/data/cgb_sheets data/
-    python scripts/eval_drawings.py --model "${INIT:?set INIT=<model dir>}" --drawings data/draw_val --extra data/cgb_sheets \
+    python scripts/eval_drawings.py --model "${INIT:?set INIT=<model dir>}" --drawings "data/${DRAWDIR:-draw_val}" --extra data/cgb_sheets \
         --out "results/$RUN/draweval.json" "$@" ;;
 
   drawbon)    # best-of-N on drawings with a consensus picker (scripts/bon_drawings.py); INIT = model; DRAW = tars; DRAWDIR
