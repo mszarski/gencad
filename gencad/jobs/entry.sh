@@ -319,8 +319,8 @@ case "$STAGE" in
     need_cq     # RICH_TEST=1 unpacks the real test parts; CADGenBench runs in its own venv (OCP 7.9 build123d)
     if [[ "${RICH_TEST:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/test*.tar; do tar -xf "$t" -C data/rich; done; fi
     apt-get update -qq && apt-get install -y -qq libegl1 libgl1 libgl1-mesa-dri libosmesa6 >/dev/null
-    python -m venv /opt/cgb && /opt/cgb/bin/pip install -q \
-        "https://github.com/huggingface/cadgenbench/archive/refs/heads/main.zip" "build123d>=0.10,<0.13"
+    pip install -q uv && uv venv -q -p 3.12 /opt/cgb && uv pip install -q --python /opt/cgb/bin/python \
+        "https://github.com/huggingface/cadgenbench/archive/refs/heads/main.zip" "build123d>=0.10,<0.13"   # needs python>=3.12
     NW=$(python -c "from mm.sysutil import usable_cpus; print(usable_cpus())")
     PREDS="$1"; shift
     for m in "$@"; do
