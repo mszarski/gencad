@@ -320,7 +320,7 @@ case "$STAGE" in
     if [[ "${RICH_TEST:-0}" == "1" ]]; then mkdir -p data/rich; for t in /work/data/rich/test*.tar; do tar -xf "$t" -C data/rich; done; fi
     apt-get update -qq && apt-get install -y -qq libegl1 libgl1 libgl1-mesa-dri libosmesa6 libusb-1.0-0 libgomp1 >/dev/null
     pip install -q uv && uv venv -q -p 3.12 /opt/cgb && uv pip install -q --python /opt/cgb/bin/python \
-        "https://github.com/huggingface/cadgenbench/archive/refs/heads/main.zip" "build123d>=0.10,<0.13"   # needs python>=3.12
+        "https://github.com/huggingface/cadgenbench/archive/refs/heads/main.zip" "build123d>=0.10,<0.13" pebble   # needs python>=3.12
     NW=$(python -c "from mm.sysutil import usable_cpus; print(usable_cpus())")
     PREDS="$1"; shift
     for m in "$@"; do

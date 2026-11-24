@@ -79,13 +79,22 @@ def _eval_one(args):
 
 
 def evaluate(a):
-    import concurrent.futures as cf
+    import time
+    from pebble import ProcessPool
     names = sorted(os.listdir(os.path.join(a.work, "gt")))[:a.limit]
     jobs = [(a.work, var, n) for var in ("raw", "fit") for n in names]
     res = {"raw": {}, "fit": {}}
-    with cf.ProcessPoolExecutor(max_workers=a.workers or 4) as ex:
-        for var, name, r in ex.map(_eval_one, jobs):
+    t0 = time.time()
+    with ProcessPool(max_workers=a.workers or 4, max_tasks=20) as pool:
+        futs = [(j, pool.schedule(_eval_one, args=(j,), timeout=a.timeout)) for j in jobs]
+        for k, (j, fu) in enumerate(futs, 1):
+            try:
+                var, name, r = fu.result()
+            except Exception as e:  # noqa: BLE001  (timeouts included)
+                var, name, r = j[1], j[2], {"error": f"{type(e).__name__}: {e}"[:200]}
             res[var][name] = r
+            if k % 50 == 0:
+                print(f"[cgb] {k}/{len(jobs)} evaluated, {time.time() - t0:.0f}s", flush=True)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     json.dump(res, open(a.out, "w"))
     import numpy as np
@@ -104,6 +113,7 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--timeout", type=float, default=600)
     a = ap.parse_args()
     prepare(a) if a.cmd == "prepare" else evaluate(a)
 
