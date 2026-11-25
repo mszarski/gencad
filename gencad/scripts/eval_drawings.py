@@ -44,7 +44,7 @@ def score(args):
     except Exception:  # noqa: BLE001
         o = 0.0
     eg, ep = np.array([bg.xlen, bg.ylen, bg.zlen]), np.array([bp.xlen, bp.ylen, bp.zlen])
-    return {"valid": True, "abs_iou": a, "own_iou": o,
+    return {"valid": True, "abs_iou": a, "own_iou": o, "gt_size": float(max(eg)), "pred_size": float(max(ep)),
             "size_err": float(np.mean(np.abs(np.sort(ep) - np.sort(eg)) / np.maximum(np.sort(eg), 1e-6)))}
 
 
@@ -101,6 +101,12 @@ def main():
     summ = {k: round(100 * float(np.mean([r[k] for r in R])), 1) for k in ("valid", "abs_iou", "own_iou")}
     summ["size_err_median"] = round(float(np.median([r["size_err"] for r in R if r["valid"]] or [1.0])), 3)
     summ["n"] = len(R)
+    V = [r for r in R if r["valid"] and r.get("pred_size", 0) > 0]
+    if len(V) > 2:                                # does the model read size? (CAD-Recode alone is all ~200 mm)
+        summ["size_corr_log"] = round(float(np.corrcoef(np.log([r["gt_size"] for r in V]),
+                                                        np.log([r["pred_size"] for r in V]))[0, 1]), 3)
+        summ["size_within_5pct"] = round(100 * float(np.mean([abs(r["pred_size"] / r["gt_size"] - 1) <= 0.05
+                                                               for r in V])), 1)
     by = {}
     for u, r in rows.items():
         if r:

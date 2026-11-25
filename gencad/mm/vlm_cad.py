@@ -215,6 +215,37 @@ class VLMCad:
         return [text_to_program(t) for t in texts], texts
 
 
+def dims_readout(dims, decimals=1):
+    """One comment line listing what a drawing's dimensions say (from scripts/make_drawing.py records), written before
+    the program so the model first reads the sheet, then builds from those numbers:
+    '# read: size 120 x 80 x 25; dia 40, 4x 6; r 5; levels z 8; from edge x 15, y 30'."""
+    import json as _j
+    if isinstance(dims, str):
+        dims = _j.loads(dims)
+    f = lambda v: f"{v:.{decimals}f}"
+    ov = {r["axis"]: f(r["value"]) for r in dims if r.get("kind") == "overall"}
+    parts = []
+    if ov:
+        parts.append("size " + " x ".join(ov[a] for a in "xyz" if a in ov))
+    dia = [(f"{r['count']}x " if r.get("count", 1) > 1 else "") + f(r["value"]) for r in dims if r.get("kind") == "diameter"]
+    if dia:
+        parts.append("dia " + ", ".join(dia))
+    rad = [f(r["value"]) for r in dims if r.get("kind") == "radius"]
+    rad += [f"all {f(r['value'])}" for r in dims if r.get("kind") == "note_radius"]
+    if rad:
+        parts.append("r " + ", ".join(rad))
+    lv = [f"{r['axis']} {f(r['value'])}" for r in dims if r.get("kind") == "level"]
+    if lv:
+        parts.append("levels " + ", ".join(lv))
+    hp = [f"{r['axis']} {f(r['value'])}" for r in dims if r.get("kind") == "hole_position"]
+    if hp:
+        parts.append("from edge " + ", ".join(hp))
+    hc = [f"{r['axis']} {f(r['value'])}" for r in dims if r.get("kind") == "hole_centre_distance"]
+    if hc:
+        parts.append("from centre " + ", ".join(hc))
+    return "# read: " + "; ".join(parts)
+
+
 def load_drawing(path, side=None):
     """An engineering-drawing sheet, longest side scaled down to `side` (default: the configured DRAWING_SIDE)."""
     im = Image.open(path).convert("RGB")

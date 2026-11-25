@@ -25,7 +25,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
-from mm.vlm_cad import DRAWING_PROMPT, VLMCad, compose_views, load_drawing, revision_text, save_config
+from mm.vlm_cad import DRAWING_PROMPT, VLMCad, dims_readout, compose_views, load_drawing, revision_text, save_config
 from train_vlm_cad import Collate, load_views
 
 IMAGE_MODES = ("view1", "view4")
@@ -51,7 +51,10 @@ class Samples(Dataset):
                 image = [image, compose_views([load_views("", rev["attempt_stem"], [v])[0] for v in views])]
             return image, revision_text(prompt, rev["attempt"], rev["error"], rev.get("features")), code
         if len(self.items[i]) > 3 and isinstance(self.items[i][3], dict):   # engineering drawing -> program in mm
-            return load_drawing(self.items[i][3]["drawing"], self.items[i][3]["side"]), DRAWING_PROMPT, code
+            d = self.items[i][3]
+            if d.get("readout"):                      # read the sheet first, then write the program
+                code = d["readout"] + "\n" + code
+            return load_drawing(d["drawing"], d["side"]), DRAWING_PROMPT, code
         if len(self.items[i]) > 3:
             views, prompt = self.items[i][3]
             return compose_views([load_views("", stem, [v])[0] for v in views]), prompt, code
@@ -172,6 +175,8 @@ def main():
                     "PNGs): engineering drawing -> the program that built it")
     ap.add_argument("--drawing_p", type=float, default=0.0, help="share of samples drawn from --drawings")
     ap.add_argument("--drawing_side", type=int, default=2048, help="longest side of drawing inputs in px")
+    ap.add_argument("--readout", action="store_true", help="drawing targets start with a '# read: ...' line listing "
+                    "the sheet's dimensions (needs drawings.parquet with a decimals column)")
     ap.add_argument("--rft", default=None, help="rejection-sampling targets (scripts/build_rft.py parquet)")
     ap.add_argument("--rft_p", type=float, default=0.5, help="share of samples drawn from --rft (rest as before)")
     ap.add_argument("--levels", nargs="*", default=["abstract", "beginner", "intermediate", "expert", "description"])
@@ -268,7 +273,10 @@ def main():
     for d in a.drawings:
         dp = pd.read_parquet(os.path.join(d, "drawings.parquet"))
         dp = dp[dp.code.str.len() <= a.rich_max_chars]
-        items_draw += [(None, c, None, {"drawing": os.path.join(d, f), "side": a.drawing_side}) for c, f in zip(dp.code, dp.png)]
+        ro = ([dims_readout(x, int(k)) for x, k in zip(dp.dims, dp.decimals)] if a.readout and "decimals" in dp
+              else [None] * len(dp))
+        items_draw += [(None, c, None, {"drawing": os.path.join(d, f), "side": a.drawing_side, "readout": r})
+                       for c, f, r in zip(dp.code, dp.png, ro)]
     if items_draw:
         print(f"[data] drawings {len(items_draw)} from {a.drawings}, share {a.drawing_p}", flush=True)
     items_rev, w_rev = [], []

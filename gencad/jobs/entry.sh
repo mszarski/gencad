@@ -339,8 +339,11 @@ case "$STAGE" in
     if [[ "$CODES" == "REAL" ]]; then   # our verified real-part programs at varied sizes (scripts/scale_program.py)
       tar -xf /work/data/self_real.tar -C data
       CODES=data/real_scaled.parquet
-      python scripts/scale_program.py --targets data/self_real/targets.parquet --out "$CODES"
+      python scripts/scale_program.py --targets data/self_real/targets.parquet --seed "${SEED:-0}" --out "$CODES"
       cp "$CODES" "/work/data/${RUN}_codes.parquet"
+    elif [[ "${SCALE:-0}" == "1" ]]; then   # every program at a random size, 10-500 mm longest side
+      python scripts/scale_program.py --targets "$CODES" --seed "${SEED:-0}" --out data/scaled.parquet
+      CODES=data/scaled.parquet; cp "$CODES" "/work/data/${RUN}_codes.parquet"
     fi
     python scripts/make_drawing.py --codes_parquet "$CODES" --cli /usr/local/bin/solidcraft-cli --out "data/$RUN" "$@"
     tar -cf "/work/data/$RUN.tar" -C data "$RUN" && echo "[drawgen] wrote /work/data/$RUN.tar" ;;
