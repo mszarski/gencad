@@ -917,6 +917,45 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
 - Reading: a 2B learns drawing -> CAD in millimetres from 28k synthetic drawings in 1k steps. Weak spots: busy
   generator drawings (more dims, more features), and real CADGenBench sheets (A2, notes, detail views, sheet metal).
 
+### Drawings phase 2A + 2B: more realistic drawings, longer SFT, best-of-N picker (`vlm_draw2`; Nov 24-25)
+- Drawing style v2 (`scripts/make_drawing.py`): level dimensions (planar steps between min and max on each axis), an
+  "ALL RADII r UNLESS OTHERWISE MARKED" note when >= 3 arcs share a radius, random A4 / A3 / A2 sheet, auto dpi (~2400 px
+  wide). Median dimensions per drawing: CAD-Recode 11, generated ~20 (style v1: 6 / 14).
+- Real-part programs: the Fusion 360 Gallery STEP files are normalised (longest side 20), so the real size is unknown;
+  `scripts/scale_program.py` rescales our verified real self targets by a factor from {0.1, 0.2, 0.25, 0.5, 1}
+  (longest side 20-200 mm), rescaling length literals only and checking bbox and volume (7,103 / 7,110 kept).
+- Data (job `drawgen`, sources in bucket `data/drawsrc2/`): `draw2_recode_{c,d,e,f}` 40k new CAD-Recode train
+  programs (~38.9k drawings), `draw2_gen_a` (train_0, unused 15k, 13,452), `draw2_gen_b` (train_20 random_mix /
+  random_mix_hard, 13,989), `draw2_real` (6,948), `draw2_val2` = the 600 `draw_val` programs redrawn in style v2 (548).
+  Failures (~2-10 %) are SolidCraft export errors, skipped. ~$10 on cpu-xl.
+- SFT `vlm_draw2`: from `vlm_draw_pilot`, 2000 steps on the pilot's 28.6k + the 101k new drawings, drawing_p 0.7,
+  bs 4 x 8, lr 1e-5, H200 ~8.5 h (~$43). Loss 0.30 -> 0.23. DeepCAD val view4 / view1: s500 92.3 / 85.8, s1000 91.1 /
+  84.0, s1500 93.0 / 84.4, s2000 91.7 / 84.7 (pilot 91.6 / 86.6: view1 ~2 points lower, borderline at n = 256).
+- Eval (abs IoU, 548 held-out drawings; paired vs the pilot on the same parts):
+  | | pilot | vlm_draw2 | paired |
+  |---|---|---|---|
+  | style v2 sheets, greedy | 45.1 (CAD-Recode 58.2 / generated 31.0) | **59.9** (79.9 / 38.4) | **+14.8 +- 1.3** (+21.8 / +7.3) |
+  | style v2, median size error | 7.9 % | 2.6 % | |
+  | style v1 sheets (pilot style), greedy | 54.8 (67.0 / 41.4) | 60.4 (81.7 / 37.1) | +5.1 +- 1.1 at s1000 (generated -3.7) |
+  | CADGenBench public sheets that build (greedy) | 2 / 6 | 4 / 6 | |
+- Best-of-8 (`scripts/bon_drawings.py`, stage `drawbon`: greedy + 7 samples at T 0.8; pick = the valid candidate
+  with the highest mean centred IoU to the others, ties to greedy; no GT):
+  | style v2 | greedy | pick | oracle |
+  |---|---|---|---|
+  | pilot | 45.3 | 48.4 (+3.2 +- 0.7) | 61.9 |
+  | vlm_draw2 | 59.6 | **63.5 (+3.8 +- 0.9)**; CAD-Recode 85.7, generated 39.5 | 77.7 |
+  Picks build 100 % (CADGenBench sheets 6 / 6 vs 4 / 6 greedy). On the pilot / style v1 the same picker gave 54.5 ->
+  56.8, oracle 70.2.
+- Dimension-matching picker (offline, `scripts/pick_dims_feats.py` + `pick_dims_score.py`, pilot / style v1 candidates):
+  tesseract OCR of the sheet numbers, prefer candidates whose bbox extents and cylinder diameters match. OCR 55.4,
+  OCR + consensus 56.2, the exact printed dimensions + consensus 57.8 vs consensus 56.8: even perfect reading adds ~1;
+  the gap to the oracle is shape (feature placement, steps, cuts), not overall size. Gotcha: pebble timeouts kill the
+  worker but leave its `tesseract` child running (hundreds piled up): run OCR serially with `OMP_THREAD_LIMIT=1`.
+- Reading: more and more realistic drawings help a lot (CAD-Recode-style parts ~80-86 abs IoU at true size). Generated
+  parts stay weak (~38-40): shape is fine (own IoU ~70) but sizes are off (median 16 %) on busy sheets with ~20
+  dimensions; the model loses on old-style sheets it now sees less. Next: RL with abs-IoU reward on generated drawings,
+  and a shape-aware picker (redraw candidates, compare views) for the ~14-point oracle gap.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped

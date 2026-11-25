@@ -24,6 +24,12 @@ GenCAD latent-pipeline weights (`ckpt/`, `emb/`, `results/{mm_*,e2e_v1,ar_v1,tok
 their eval json kept) and this project's 232 old launch snapshots in `jobs-artifacts`. Freed 32.2 GB; bucket now
 46.7 GB. Models left: `vlm_grpo_self` (best) and `vlm_grpo_real2`.
 
+**Drawings 2026-11-24/25** (plan: `gencad/PLAN_drawings.md`): best drawing model `results/vlm_draw2/model` (from
+`vlm_grpo_self` via `vlm_draw_pilot`; drawing -> CadQuery in mm): abs IoU 59.9 on held-out realistic drawings (pilot
+45.1), best-of-8 consensus 63.5; CAD-Recode-style parts ~80-86, generated parts ~39 (sizes misread on busy sheets).
+Render skills: DeepCAD view4 91.7 (view1 84.7, ~2 below). `vlm_grpo_self` stays the best render model. Spend on
+drawings: phase 0 ~$16, pilot ~$30, phase 2A+2B ~$71. Next: RL with abs-IoU reward on drawings; shape-aware picker.
+
 ---
 
 ## 1. Goal

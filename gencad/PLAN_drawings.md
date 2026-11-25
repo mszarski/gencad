@@ -41,6 +41,11 @@ Our model, CADGenBench score on 600 real parts: 0.22 as written, 0.64 at the tru
 28.6k drawings; pilot SFT 1k steps: abs IoU on held-out drawings 0.6 -> 54.8, size error 52 % -> 4.8 %, valid 95 %.
 Cost ~$30 (data ~$4, SFT ~$22, evals ~$3).
 
+## Phase 2A + 2B: DONE Nov 25 (CLAUDE.md "Drawings phase 2A + 2B")
+101k more drawings in a more realistic style + 2000-step SFT (`vlm_draw2`): abs IoU on held-out style-v2 drawings
+45.1 -> 59.9 (+14.8 paired), size error 7.9 % -> 2.6 %, 4 / 6 CADGenBench sheets build; best-of-8 consensus 63.5, every
+pick builds (6 / 6 sheets). Generated parts still ~39. Cost ~$71 of the $60-80 approved.
+
 ## Phase 1 (original text): drawing data (CPU jobs, ~$10-25)
 1. Close the converter gaps (cones, mirror, taper, shells) so generator families convert.
 2. Dimensioning pass (`scripts/make_drawing.py`): per part, SolidCraft views (front/top/right + iso, sometimes a

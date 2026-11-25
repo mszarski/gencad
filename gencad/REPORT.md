@@ -189,6 +189,14 @@ broken code (1.2 %), but only 50.3 from one view (ours 62.6). So the earlier "Cl
 was mostly about DeepCAD's conventions: on real designs from 4 views a frontier model is already about as good as
 our trained 2B — which makes it a good teacher for real-part training data.
 
+**Engineering drawings in millimetres (Nov 24-25).** To target the CADGenBench benchmark (drawing sheet -> STEP,
+scored at true size) we made ~130k synthetic dimensioned drawings with SolidCraft (CAD-Recode, our generator
+families, our real-part programs), in two styles, and fine-tuned the 2B on them (`vlm_draw_pilot`, then `vlm_draw2`).
+On 548 held-out drawings in the more realistic style, volume IoU at true size went from ~0 (render model) to 45 (pilot)
+to 60 (`vlm_draw2`), 64 with best-of-8 and a consensus picker; median size error 2.6 %. Simple CAD-Recode-style parts
+reach ~80-86; busy generated parts ~39 (sizes misread). 4 of the 6 public CADGenBench sheets we tried build (6 of 6
+with best-of-8); no benchmark submission yet. Render skills kept (DeepCAD view4 91.7).
+
 ## Current standings (test set, own IoU %, all parts / novel parts)
 
 | model | 1 view | 4 views | 1 view + expert text | expert text only |
