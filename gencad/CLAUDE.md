@@ -956,6 +956,22 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
   dimensions; the model loses on old-style sheets it now sees less. Next: RL with abs-IoU reward on generated drawings,
   and a shape-aware picker (redraw candidates, compare views) for the ~14-point oracle gap.
 
+### Drawings: the model does not read absolute size; dimensioning bug (Nov 25 check + independent review)
+- Size check (`vlm_draw2` / pilot on `draw2_val2`, bbox extents of prediction vs GT): CAD-Recode GT parts are ALL
+  ~200 mm on the longest side (199.5-201; CAD-Recode is normalised, in training too), predictions 200: the "true size"
+  gain on CAD-Recode is a learned constant, not reading. Generated parts (GT 100-203 mm): corr(log predicted size, log
+  GT size) 0.13 (pilot 0.09), predictions cluster at ~140 mm; 73 % are > 10 % off, 86 % of those by one uniform
+  factor on all axes (shape right, scale guessed). So the model does not take overall size from the printed numbers.
+- Bug (`make_drawing.py::choose_dims`, reproduced): overall and level dims are measured between B-rep vertices, so
+  round parts get wrong overall values (stepped shaft 20 x 20 x 50 -> "overall x 4", y missing; flange 80 wide ->
+  "47.5"); only one diameter per centre (OD / step / bore: one shown). The sheets teach that numbers are unreliable.
+- Review notes worth keeping: "CADGenBench sheets that build" is not a quality signal (a valid answer on sheet 101 is
+  an invented 8-lobed wheel); abs IoU is centred, rotation-free and blind to holes, unlike their shape+interface
+  score; report CAD-Recode dup / novel and per-family; check mirror errors (first / third angle).
+- Fix before any RL: true bbox overall dims, all concentric diameters, depths, "4X" counts, centre-to-centre; random
+  part size (10-500 mm, log-uniform, `scale_program.py`) for every source; a dimension read-out comment before the code
+  from the printed dims; crop to the views; rebuild the val set the same way with a size-correlation check.
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped
