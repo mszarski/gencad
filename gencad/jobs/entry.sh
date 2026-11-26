@@ -285,6 +285,25 @@ case "$STAGE" in
     export HF_XET_HIGH_PERFORMANCE=1
     python scripts/mistral_real.py --model "${INIT:?set INIT=<hf model id>}" --out "results/$RUN/preds.pkl" "$@" ;;
 
+  blendeval)  # blend INIT with its base model at ALPHAS (scripts/blend_weights.py), then reading probe + drawing eval
+    need_cq     # DRAW / DRAWDIR: held-out drawings; BLEND_PARTS: optional tensor-name filter (e.g. "visual")
+    need_vllm
+    for d in ${DRAW:-draw3_val}; do tar -xf "/work/data/$d.tar" -C data; done
+    [[ -d data/cgb_sheets ]] || cp -r /work/data/cgb_sheets data/
+    MODELS=()
+    for al in ${ALPHAS:-0.2 0.4}; do
+      out="results/$RUN/a$al/model"
+      python scripts/blend_weights.py --ours "${INIT:?set INIT}" --base Qwen/Qwen3-VL-2B-Instruct --alpha "$al" \
+          ${BLEND_PARTS:+--parts $BLEND_PARTS} --out "$out"
+      MODELS+=("$out")
+    done
+    python scripts/probe_dims.py --data "data/${DRAWDIR:-draw3_val}" --models "${MODELS[@]}" --sides 2048 \
+        --out "results/$RUN/probe.json"
+    for m in "${MODELS[@]}"; do
+      python scripts/eval_drawings.py --model "$m" --drawings "data/${DRAWDIR:-draw3_val}" --extra data/cgb_sheets \
+          --out "$(dirname "$m")/draweval.json"
+    done ;;
+
   dimprobe)   # zero-shot dimension-reading probe of base VLMs on drawings (scripts/probe_dims.py)
     need_vllm     # DRAW = drawing tars to unpack, DRAWDIR = which one to probe (default: the snapshot's data/dimprobe)
     for d in ${DRAW:-}; do tar -xf "/work/data/$d.tar" -C data; done
