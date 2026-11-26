@@ -61,6 +61,9 @@ def main():
     ap.add_argument("--drawing_side", type=int, default=None, help="default: the model's gencad_vlm.json, else 2048")
     ap.add_argument("--max_new_tokens", type=int, default=1536)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--prefill", choices=["none", "oracle"], default="none",
+                    help="oracle: start each answer with the true '# read:' line from drawings.parquet (how well the "
+                         "model builds from correctly read dimensions)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     import pandas as pd
@@ -72,6 +75,10 @@ def main():
     side = a.drawing_side or V.DRAWING_SIDE or 2048
     D = pd.read_parquet(os.path.join(a.drawings, "drawings.parquet")).head(a.limit)
     items = [(u, os.path.join(a.drawings, f), c) for u, f, c in zip(D.uid, D.png, D.code)]
+    pre = [""] * len(items)
+    if a.prefill == "oracle":
+        from mm.vlm_cad import dims_readout
+        pre = [dims_readout(d, int(k)) + "\n" for d, k in zip(D.dims, D.decimals)]
     if a.extra:
         items += [("x_" + os.path.splitext(f)[0], os.path.join(a.extra, f), None) for f in sorted(os.listdir(a.extra))
                   if f.endswith(".png")]
@@ -79,9 +86,11 @@ def main():
     text = proc.apply_chat_template(_messages(object(), DRAWING_PROMPT), tokenize=False, add_generation_prompt=True)
     llm = LLM(model=a.model, dtype="bfloat16", max_model_len=8192, limit_mm_per_prompt={"image": 1},
               mm_processor_kwargs={"max_pixels": int(side * side * 0.72)}, gpu_memory_utilization=0.85)
-    reqs = [{"prompt": text, "multi_modal_data": {"image": load_drawing(p, side)}} for _, p, _ in items]
+    pre += [""] * (len(items) - len(pre))
+    reqs = [{"prompt": text + pf, "multi_modal_data": {"image": load_drawing(p, side)}}
+            for (_, p, _), pf in zip(items, pre)]
     outs = llm.generate(reqs, SamplingParams(temperature=0.0, max_tokens=a.max_new_tokens), use_tqdm=False)
-    codes = [o.outputs[0].text.strip() or None for o in outs]
+    codes = [(pf + o.outputs[0].text).strip() or None for o, pf in zip(outs, pre)]
     from pebble import ProcessPool
     rows, extra = {}, {}
     with ProcessPool(max_workers=usable_cpus()) as pool:
