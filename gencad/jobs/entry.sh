@@ -286,8 +286,10 @@ case "$STAGE" in
     python scripts/mistral_real.py --model "${INIT:?set INIT=<hf model id>}" --out "results/$RUN/preds.pkl" "$@" ;;
 
   dimprobe)   # zero-shot dimension-reading probe of base VLMs on drawings (scripts/probe_dims.py)
-    need_vllm
-    python scripts/probe_dims.py --data data/dimprobe --extra data/cgb_sheets --out "results/$RUN/probe.json" "$@" ;;
+    need_vllm     # DRAW = drawing tars to unpack, DRAWDIR = which one to probe (default: the snapshot's data/dimprobe)
+    for d in ${DRAW:-}; do tar -xf "/work/data/$d.tar" -C data; done
+    [[ -d data/cgb_sheets ]] || cp -r /work/data/cgb_sheets data/
+    python scripts/probe_dims.py --data "data/${DRAWDIR:-dimprobe}" --extra data/cgb_sheets --out "results/$RUN/probe.json" "$@" ;;
 
   richiou)    # score a rich/real preds file (scripts/rich_iou.py) -> results/$RUN/rich_{iou.json,rows.pkl}
     need_cq     # REAL=1 unpacks the real training parts (GT STEP files), RICH_TEST=1 the test shards
