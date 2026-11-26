@@ -46,6 +46,11 @@ Cost ~$30 (data ~$4, SFT ~$22, evals ~$3).
 45.1 -> 59.9 (+14.8 paired), size error 7.9 % -> 2.6 %, 4 / 6 CADGenBench sheets build; best-of-8 consensus 63.5, every
 pick builds (6 / 6 sheets). Generated parts still ~39. Cost ~$71 of the $60-80 approved.
 
+## Style v3 + read-out round: STOPPED Nov 26 (CLAUDE.md "Drawings style v3 + read-out targets")
+Found that our model line cannot read text (base 2B reads 70 % of dimensions, ours 2 %); given correct numbers it
+builds at true size (51 IoU). Paused at the user's call (~$44). Next: a reader model, or redo the line from the base
+with a reading task in every mix.
+
 ## Phase 1 (original text): drawing data (CPU jobs, ~$10-25)
 1. Close the converter gaps (cones, mirror, taper, shells) so generator families convert.
 2. Dimensioning pass (`scripts/make_drawing.py`): per part, SolidCraft views (front/top/right + iso, sometimes a

@@ -15,7 +15,7 @@ trained on ~1M procedural programs and then post-trained with online reinforceme
 | DeepCAD test parts | 4 renders | **91.4 IoU** (88.4 on unseen parts), one answer | GenCAD ~22; Claude Opus 5.5 zero-shot 83.4; cadrille + RL 92.2 |
 | Real designs (Fusion 360 Gallery, 600 parts) | 4 renders | **71.9 own IoU** with best-of-9 picking (66.5 one answer) | Claude Opus 5.5 zero-shot 66.5 |
 | Procedural parts with real features (fillets, holes, revolves…) | 4 renders | **~82-84 own IoU** | 55 before training on them |
-| Engineering drawings → part in millimetres | 1 drawing sheet | shapes right (~75 own IoU) but **absolute size not read yet**; fix in training now | [CADGenBench](https://github.com/huggingface/cadgenbench) is the target |
+| Engineering drawings → part in millimetres | 1 drawing sheet | shapes right (~75 own IoU) but **sizes not read**: our fine-tuned line lost the base model's text reading; given correct numbers it builds at size (51 IoU) | [CADGenBench](https://github.com/huggingface/cadgenbench) is the target |
 
 IoU = volume intersection over union with the true part, in %, invalid code = 0. "own" fits each solid to its own
 box (size ignored). Details, caveats and paired comparisons: [docs/results.md](docs/results.md).

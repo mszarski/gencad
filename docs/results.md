@@ -55,11 +55,14 @@ synthetic drawings are made with SolidCraft from our programs. See [drawings.md]
 |---|---|---|---|---|---|
 | `vlm_draw2` | style v2 (parts at their dataset size) | 95 % | 59.9 | 74.8 | looked like it (2.6 % median size error) |
 | `vlm_draw2` | **style v3, random sizes 10-500 mm** | 96 % | **11.1** | 75.0 | **no** (size correlation -0.01) |
-| `vlm_draw3` | style v3 | training now | | | |
+| `vlm_draw3` (step 1000, stopped) | style v3 | 89 % | 8.2 | 56.0 | no (-0.01) |
+| `vlm_draw3` given the true read-out line | style v3 | 92 % | **51.2** | 54.6 | yes (0.98) |
 
 Reading: the earlier "true size" gains came from CAD-Recode parts all being 200 mm long, plus a dimensioning bug on
 round parts; the model learned shapes but not to read overall size. Style v3 fixes the drawings and varies every
-part's size, and its targets start by listing the dimensions read off the sheet.
+part's size, and its targets start by listing the dimensions read off the sheet. The deeper cause: our fine-tuned
+model line has lost the base model's ability to read text (base Qwen3-VL-2B reads 70 % of printed dimensions on these
+sheets, our render model 2 %); given correct numbers it builds at the right size.
 
 ## Things that did not help
 

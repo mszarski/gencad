@@ -30,11 +30,18 @@ only way to get the size right. Training targets start with a read-out line, e.g
 - First drawing models (`vlm_draw_pilot`, `vlm_draw2`) learned shapes from drawings (shape-only IoU ~75) but not
   absolute size: CAD-Recode parts are all 200 mm long, and round parts' overall dimensions were printed wrong. On
   drawings at random sizes `vlm_draw2` scores 11 IoU at true size, with no correlation between predicted and true
-  size. Style v3 and `vlm_draw3` (training) address this.
+  size. Style v3 fixes the drawings, but the real cause is deeper: **our model line has lost the base model's ability
+  to read text**. On the same 559 sheets the base Qwen3-VL-2B reads 70 % of the printed dimensions, our render model
+  2 %. Months of fine-tuning on renders (no text, nothing rewarding reading) erased it; read-out training (1000 steps),
+  blending weights with the base model and swapping in the base vision encoder did not bring it back.
+- Given the correct read-out line, the model builds parts at the right size: true-size IoU 51 (vs 8 reading by
+  itself), size correlation 0.98. Reading is the only missing piece.
 - Picking among 8 candidates by mutual agreement adds ~3-4 points and makes every answer build; picking by OCR'd
   dimensions did not help.
 
 ## Not done yet
 
+A reader (the base model fine-tuned to write the read-out line) feeding the CAD model, or re-training the line from
+the base model with a reading task kept in every mix. 
 A run on the 49 public CADGenBench tasks (no submission yet); section and detail views and callout notes in our
 drawings; a picker that redraws each candidate and compares it with the input sheet.

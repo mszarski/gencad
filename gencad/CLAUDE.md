@@ -972,6 +972,39 @@ detail < 0.8. Use detail alongside own IoU from now on; RL reward planned as 0.6
   part size (10-500 mm, log-uniform, `scale_program.py`) for every source; a dimension read-out comment before the code
   from the printed dims; crop to the views; rebuild the val set the same way with a size-correlation check.
 
+### Drawings style v3 + read-out targets (`vlm_draw3`); our model line cannot read text (Nov 25-26) — stopped
+- Style v3 (`make_drawing.py`): overall sizes between true extremes (B-rep corners; else an edge-on full circle via a
+  `length` dim; else the two end cylinders' far outlines via `silhouettes`; else omitted, never wrong), levels from
+  flat faces, every concentric diameter, hole positions from a corner or centre-to-centre on round parts, "NX Ød"
+  callouts (`override_text`), staggered `offset_mm` / label placement, 0-2 decimals; A4 retry on "collapsed curve".
+  SolidCraft linear dims accept only B-rep corners. Checked: 145/145 printed overall sizes equal the bbox.
+- Random size: `scale_program.py --size 10 500` (log-uniform longest side, half snapped to round factors); fixes:
+  numbers after `/` are ratios, Sketch `parray`/`regularPolygon` angles kept, positional keeps apply only to direct
+  numbers (Sketch.polygon points scale). Kept: CAD-Recode 100 %, generator ~98 %, real ~96 %, each verified k x.
+- Data (`SCALE=1` drawgen, sources `data/drawsrc{,2}`): `draw3_recode_{c,d,e,f}` 39,020, `draw3_gen_{a,b,t}` 36,969,
+  `draw3_real` 6,959 (82,948); held-out `draw3_val` 559 (the old val programs at random sizes). ~$11.
+- `train_vlm_cq.py --readout`: targets start with `# read: size ... ; dia ...; levels ...` (`mm.vlm_cad.dims_readout`)
+  then the program. `vlm_draw3` from `vlm_draw2`, 2000 planned, **stopped at step 1000** (loss 1.32 s50 -> 0.40
+  s1000; ~$23). DeepCAD val view4 / view1: s500 90.8 / 84.4, s1000 92.3 / 86.0 (render skills fine).
+- Eval on `draw3_val` (true-size abs IoU / own IoU / valid / corr(log pred size, log GT size)):
+  | model | abs | own | valid | size corr |
+  |---|---|---|---|---|
+  | vlm_draw2 | 11.1 | 75.0 | 95.9 | -0.01 |
+  | vlm_draw3 s500 | 7.5 | 48.9 | 86.0 | -0.05 |
+  | vlm_draw3 s1000 | 8.2 | 56.0 | 89.4 | -0.01 |
+  | **vlm_draw3 s500 given the true read-out** (`eval_drawings.py --prefill oracle`) | **51.2** | 54.6 | 92.3 | **0.976** |
+  Read-out lines it writes itself: 3-4 % of their numbers are on the sheet, 0 / 547 overall sizes right (s1000).
+- **Root cause: our model line has lost the base model's text reading.** Zero-shot reading probe on the 559 sheets at
+  2048 px (`probe_dims.py`, stage `dimprobe DRAW=... DRAWDIR=...`): base Qwen3-VL-2B recall 69.5 % / precision 84.6 %;
+  `vlm_grpo_self` 2.2 % / 1.7 %. Input checked: the processor feeds 2048 x 1440 (2,880 tokens), digits legible.
+  Months of full fine-tuning on renders -> code (no text in inputs, nothing rewarding reading) erased it.
+  Not fixed by: 1000 steps of read-out targets; weight blending with the base (`scripts/blend_weights.py`, stage
+  `blendeval`; alpha 0.2 / 0.4: reading 3.9 / 3.0 %, own IoU 34.8 at 0.2); swapping in the base vision encoder
+  (`--parts visual`, alpha 1.0: reading 3.3 %, model broken, own 5.4; 0.5: 5.7 %).
+- Options (not started): a separate reader (base 2B fine-tuned drawing -> read-out line, ~$15-20) prefilled into the
+  writer; or redo the line from the base with a reading task in every mix (~$150+). From now on add a reading probe
+  to evaluations so a lost skill shows up early. Checkpoint kept: `results/vlm_draw3/model` (s1000).
+
 ### Visual check and an "own" IoU quirk (`scripts/gallery.py`, bucket `results/gallery/gallery_view4.png`)
 14 test parts (8 random novel, 4 where GRPO beats SFT most, 2 where it is worst): input, GT, SFT, Claude, full-res, GRPO,
 same iso camera. Simple novel parts (plates, bars, blocks with a hole) are right for every method; complex stepped

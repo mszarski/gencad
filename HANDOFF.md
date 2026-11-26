@@ -30,6 +30,14 @@ their eval json kept) and this project's 232 old launch snapshots in `jobs-artif
 Render skills: DeepCAD view4 91.7 (view1 84.7, ~2 below). `vlm_grpo_self` stays the best render model. Spend on
 drawings: phase 0 ~$16, pilot ~$30, phase 2A+2B ~$71. Next: RL with abs-IoU reward on drawings; shape-aware picker.
 
+**Drawings 2026-11-25/26:** the drawing models never read size. CAD-Recode parts are all 200 mm and round parts'
+overall dims were printed wrong (fixed in style v3); on drawings at random sizes `vlm_draw2` scores 11 true-size IoU,
+size correlation ~0. Root cause: our render-trained line lost the base model's text reading (dimension probe: base
+69.5 %, `vlm_grpo_self` 2.2 %); read-out training (`vlm_draw3`, stopped at s1000), weight blending and a vision-encoder
+swap did not bring it back. Given the true read-out the model builds at size (51 IoU, corr 0.98). Paused by the user;
+next would be a separate reader from the base model or a re-run of the line with a reading task kept in the mix.
+Spend this round ~$44.
+
 ---
 
 ## 1. Goal
